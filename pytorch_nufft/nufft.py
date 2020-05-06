@@ -3,7 +3,7 @@ import numpy
 import torch
 
 import pytorch_nufft.interp as interp
-from fastMRI.data import transforms
+from data import transforms
 from pytorch_nufft import util
 
 

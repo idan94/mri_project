@@ -1,10 +1,8 @@
-import matplotlib.pyplot as plt
 import torch
 from torch import nn
 
 import pytorch_nufft.interp as interp
 import pytorch_nufft.nufft as nufft
-from fastMRI.data import transforms
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -15,6 +13,13 @@ def print_complex_kspace_tensor(k_space):
 
 def print_complex_image_tensor(image):
     return torch.sqrt(image[:, :, 0] ** 2 + image[:, :, 1] ** 2)
+
+
+class Flatten(torch.nn.Module):
+    def forward(self, x):
+        batch_size = x.shape[0]
+        return x.view(batch_size, -1)
+
 
 class SubSamplingLayer(nn.Module):
 
@@ -31,8 +36,6 @@ class SubSamplingLayer(nn.Module):
         every_point = every_point - (0.5 * self.resolution)
         every_point = every_point.to(device)
 
-
-
         return every_point
 
     def __init__(self, decimation_rate, resolution, trajectory_learning: bool):
@@ -44,17 +47,16 @@ class SubSamplingLayer(nn.Module):
         self.trajectory = torch.nn.Parameter(self.get_init_trajectory_full(), requires_grad=trajectory_learning)
 
     def forward(self, k_space_input):
-
-        plt.figure()
-        plt.imshow(print_complex_kspace_tensor(k_space_input[0].squeeze().detach().cpu()), cmap='gray')
-        plt.title('Given K SPACE')
-        plt.show()
-
-        full_image = transforms.ifft2(k_space_input)
-        plt.figure()
-        plt.imshow(print_complex_image_tensor(full_image[0].squeeze().detach().cpu()), cmap='gray')
-        plt.title('Image from given K SPACE')
-        plt.show()
+        # plt.figure()
+        # plt.imshow(print_complex_kspace_tensor(k_space_input[0].squeeze().detach().cpu()), cmap='gray')
+        # plt.title('Given K SPACE')
+        # plt.show()
+        #
+        # full_image = transforms.ifft2(k_space_input)
+        # plt.figure()
+        # plt.imshow(print_complex_image_tensor(full_image[0].squeeze().detach().cpu()), cmap='gray')
+        # plt.title('Image from given K SPACE')
+        # plt.show()
 
         # Fix dimensions for the interpolation
         # We want k space shape will be: (Channels, Batch Size, Resolution, Resolution, 2)
@@ -63,18 +65,18 @@ class SubSamplingLayer(nn.Module):
         sub_ksp = interp.bilinear_interpolate_torch_gridsample(k_space_input, self.trajectory)
         output = nufft.nufft_adjoint(sub_ksp, self.trajectory, k_space_input.shape)
 
-        fixed_output = output.squeeze()[0].detach().cpu()
-        plt.figure()
-        plt.imshow(print_complex_image_tensor(fixed_output), cmap='gray')
-        plt.title('After nufft MASKED K SPACE')
-        plt.show()
-
-        fixed_output_kspace = transforms.fft2(fixed_output)
-
-        plt.figure()
-        plt.imshow(print_complex_kspace_tensor(fixed_output_kspace), cmap='gray')
-        plt.title('K space of Output')
-        plt.show()
+        # fixed_output = output.squeeze()[0].detach().cpu()
+        # plt.figure()
+        # plt.imshow(print_complex_image_tensor(fixed_output), cmap='gray')
+        # plt.title('After nufft MASKED K SPACE')
+        # plt.show()
+        #
+        # fixed_output_kspace = transforms.fft2(fixed_output)
+        #
+        # plt.figure()
+        # plt.imshow(print_complex_kspace_tensor(fixed_output_kspace), cmap='gray')
+        # plt.title('K space of Output')
+        # plt.show()
 
         # Add channel dimension:
         output = output.unsqueeze(1)
@@ -87,29 +89,27 @@ class SubSamplingLayer(nn.Module):
     def __repr__(self):
         return f'SubSamplingLayer'
 
-#
-# class SubSamplingModel(nn.Module):
-#     def __init__(self, resolution, decimation_rate):
-#         super().__init__()
-#         self.resolution = resolution
-#         self.decimation_rate = decimation_rate
-#         self.num_measurements = self.resolution ** 2 // self.decimation_rate
-#
-#     def forward(self, *input: Any, **kwargs: Any) -> T_co:
-#
-#
-# def like_forward(input, resolution, decimation_rate):
-#     input = input.permute(2, 1, 4, 0, 3).squeeze(1)
-#
-#     every_point = torch.zeros(resolution * resolution, 2)
-#     for i in range(resolution):
-#         for j in range(resolution):
-#             every_point[i * resolution + j] = torch.tensor([i, j])
-#     every_point = every_point - (0.5 * resolution)
-#     every_point = every_point.to(device)
-#
-#     sub_ksp = interp.bilinear_interpolate_torch_gridsample(input, every_point)
-#     output = nufft.nufft_adjoint(sub_ksp, every_point, input.shape)
-#     fixed_output = output.squeeze()
-#     plt.imshow(print_complex_image_tensor(fixed_output.cpu()), cmap='gray')
-#     plt.show()
+
+class SubSamplingModel(nn.Module):
+    def __init__(self, decimation_rate, resolution, trajectory_learning):
+        super().__init__()
+
+        self.sub_sampling_layer = SubSamplingLayer(decimation_rate, resolution, trajectory_learning)
+        self.reconstruction_model = nn.Sequential(
+            nn.Conv2d(2, 6, 3, padding=(1, 1)),
+            nn.ReLU(),
+            nn.Conv2d(6, 15, 3, padding=(1, 1)),
+            nn.ReLU(),
+            nn.Conv2d(15, 3, 3, padding=(1, 1)),
+            nn.ReLU(),
+            nn.Conv2d(3, 1, 5, padding=(2, 2)),
+        )
+
+    def forward(self, input_data):
+        input_data = self.sub_sampling_layer(input_data)
+        output = self.reconstruction_model(input_data.squeeze().permute(0, 3, 1, 2))
+        # output = torch.sqrt(output[:, :, 0] ** 2 + output[:, :, 1] ** 2)
+        return output
+
+    def get_trajectory(self):
+        return self.subsampling.get_trajectory()

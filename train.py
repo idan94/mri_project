@@ -1,9 +1,11 @@
 import torch
+import torch.optim as optim
+from torch import nn
 from torch.utils.data import DataLoader
 
-from fastMRI.data import transforms
-from fastMRI.data.mri_data import SliceData
-from model import SubSamplingLayer
+from data import transforms
+from data.mri_data import SliceData
+from model import SubSamplingModel
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -37,17 +39,37 @@ def data_transform(k_space, mask, target, attrs, f_name, slice):
     return cropped_k_space, full_image, cropped_image, slice, target
 
 
-'''
+def train(train_data, network, number_of_epochs):
+    network = network.to(device)
+    # define loos and optimizer
+    loss_function = nn.L1Loss()
+    optimizer = optim.Adam(network.parameters())
+    print('Starting Training')
+    print("train_data len is: " + str(len(train_data)))
+    for epoch_number in range(number_of_epochs):
+        running_loss = 0
+        for iter, data in enumerate(train_data):
+            cropped_k_space, full_image, cropped_image, slice, target = data
 
-האינפוט לשכבת דגימה צריך להיות מהצורה:
-(batch_size, num_channels=1,res,res,2) לדוגמא (16,1,320,320,2)
-אחרי הפקודת permute צריך להיות (16,2,320,320)
-אחרי הbilinear interpolation צריך להיות (16,2,10240) המימד האחרון הוא כמות הדגימות 
-ואחרי הnufft_adjoint חוזר לממדים של תמונה (16,320,320)
-ואז רק מוסיף את המימד של הchannel ומחזיר (16,1,320,320)
+            # Add channel dimension:
+            cropped_k_space = cropped_k_space.unsqueeze(1).to(device)
 
+            cropped_k_space = cropped_k_space.to(device)
+            target = target.to(device)
 
-'''
+            # zero the parameter gradients
+            optimizer.zero_grad()
+
+            output = network(cropped_k_space)
+            loss = loss_function(output.squeeze(), target)
+            loss.backward()
+            optimizer.step()
+            if iter % 10 == 0:
+                print("Iter number is: " + str(iter))
+            # print statistics
+            running_loss += loss.item()
+        print('running_loss = ' + str(running_loss))
+    print('Finished Training')
 
 
 def main():
@@ -63,50 +85,10 @@ def main():
         shuffle=False,
         num_workers=0,
         pin_memory=True,
+        drop_last=True,
     )
-    network = SubSamplingLayer(4, 320, True)
-
-    for iter, data in enumerate(train_loader):
-
-        cropped_k_space, full_image, cropped_image, slice, target = data
-        if slice[0] > 8:
-            # Add channel dimension:
-            cropped_k_space = cropped_k_space.unsqueeze(1).to(device)
-            cropped_image = cropped_image.to(device)
-
-            output = network(cropped_k_space)
-            a = 5
-
-    # for cropped_k_space, full_image, cropped_image, slice, target in dataset:
-    #     if slice == 16:
-    #         # print('full_k_space shape:' + str(full_k_space.shape))
-    #         print('full_image shape:' + str(full_image.shape))
-    #         print('cropped_image shape:' + str(cropped_image.shape))
-    #         print('cropped_k_space shape:' + str(cropped_k_space.shape))
-    #         # plt.figure()
-    #         # plt.subplot(2, 2, 1)
-    #         # plt.imshow(print_complex_kspace_tensor(narrowed_k_space), cmap='gray')
-    #         # plt.subplot(2, 2, 2)
-    #         # plt.imshow(print_complex_image_tensor(cropped_image), cmap='gray')
-    #         # plt.subplot(2, 2, 3)
-    #         # plt.imshow(print_complex_image_tensor(full_image), cmap='gray')
-    #         plt.figure()
-    #         plt.subplot(2, 2, 1)
-    #         plt.imshow(print_complex_image_tensor(cropped_image), cmap='gray')
-    #         plt.subplot(2, 2, 2)
-    #         plt.imshow(target, cmap='gray')
-    #         plt.subplot(2, 2, 3)
-    #         plt.imshow(print_complex_kspace_tensor(cropped_k_space), cmap='gray')
-    #         plt.show()
-    #         print(torch.dist(torch.tensor(target), print_complex_image_tensor(cropped_image)))
-    #         print("Done slice")
-    #         # a += 1
-    #         # if a == 4:
-    #         #     exit()
-    #         input = cropped_k_space.unsqueeze(1).unsqueeze(1).to(device)
-    #         input.to(device)
-    #         like_forward(input, 320, 1)
-    #         exit()
+    network = SubSamplingModel(4, 320, True)
+    train(train_loader, network, 3)
 
 
 if __name__ == '__main__':
