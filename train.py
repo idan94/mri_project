@@ -1,3 +1,5 @@
+import time
+
 import torch
 import torch.optim as optim
 from torch import nn
@@ -42,15 +44,16 @@ def data_transform(k_space, mask, target, attrs, f_name, slice):
 def train(train_data, network, number_of_epochs):
     network = network.to(device)
     # define loos and optimizer
-    loss_function = nn.L1Loss()
+    loss_function = nn.MSELoss()
     optimizer = optim.Adam(network.parameters())
     print('Starting Training')
+    start_time = time.time()
     print("train_data len is: " + str(len(train_data)))
     for epoch_number in range(number_of_epochs):
+        running_time = time.time()
         running_loss = 0
         for iter, data in enumerate(train_data):
             cropped_k_space, full_image, cropped_image, slice, target = data
-
             # Add channel dimension:
             cropped_k_space = cropped_k_space.unsqueeze(1).to(device)
 
@@ -69,13 +72,53 @@ def train(train_data, network, number_of_epochs):
             # print statistics
             running_loss += loss.item()
         print('running_loss = ' + str(running_loss))
+        print('Epoch time: ' + str(time.time() - running_time))
+    print('Overall time: ' + str(time.time() - start_time))
     print('Finished Training')
 
 
 def main():
-    print('Starting')
+    '''
+    network = SubSamplingModel(4, 320, True)
+    path = './network.pth'
+    network.load_state_dict(torch.load(path))
+    network = network.to(device)
+    data_path = 'singlecoil_val'
     dataset = SliceData(
-        root='singlecoil_val',
+        root=data_path,
+        transform=data_transform,
+        challenge='singlecoil', sample_rate=1
+    )
+    train_loader = DataLoader(
+        dataset=dataset,
+        batch_size=4,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=True,
+        drop_last=True,
+    )
+    for iter, data in enumerate(train_loader):
+        cropped_k_space, full_image, cropped_image, slice, target = data
+        if slice[2] == 15:
+            plt.figure()
+            plt.imshow(target[2], cmap='gray')
+            plt.title('image')
+            plt.show()
+            input_to_network = cropped_k_space.unsqueeze(1).to(device)
+            output_image = network(input_to_network)
+            output_image = output_image.squeeze().detach().cpu()
+            plt.figure()
+            plt.imshow(output_image[2], cmap='gray')
+            plt.title('Our network on image')
+            plt.show()
+            a = 5
+
+    exit()
+    '''
+    print('Starting')
+    data_path = 'singlecoil_val'
+    dataset = SliceData(
+        root=data_path,
         transform=data_transform,
         challenge='singlecoil', sample_rate=1
     )
@@ -89,6 +132,8 @@ def main():
     )
     network = SubSamplingModel(4, 320, True)
     train(train_loader, network, 3)
+    path = './network.pth'
+    torch.save(network.state_dict(), path)
 
 
 if __name__ == '__main__':

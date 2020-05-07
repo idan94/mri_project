@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import numpy
 import torch
 
@@ -54,14 +53,20 @@ def nufft_adjoint(input, coord, oshape, oversamp=1.25, width=4.0, n=128, device=
 
     # IFFT
     output = output.permute(0, 2, 3, 1)
+
     # plt.figure()
     # plt.imshow(print_complex_kspace_tensor(output[0].detach().cpu()), cmap='gray')
     # plt.show()
-    # output = transforms.ifft2(output)
+
+    output = transforms.ifft2(output)
+
+    # plt.figure()
+    # plt.imshow(print_complex_image_tensor(output[0].detach().cpu()), cmap='gray')
+    # plt.show()
 
     # Crop
     output = output.permute(0, 3, 1, 2)
-    output = util.resize(output, oshape)
+    output = util.resize(output, oshape, device=device)
     output *= util.prod(os_shape[-ndim:]) / util.prod(oshape[-ndim:]) ** 0.5
 
     # Apodize
