@@ -30,7 +30,8 @@ def bilinear_interpolate_torch_gridsample(input, coord):
             (coord[:, :, :, 0] + input.shape[2] / 2) / (input.shape[2] - 1))  # normalize to between  -1 and 1
     tmp = tmp * 2 - 1  # normalize to between -1 and 1
     tmp = tmp.expand(input.shape[0], -1, -1, -1)
-    return torch.nn.functional.grid_sample(input, tmp).squeeze(2)
+    return torch.nn.functional.grid_sample(input=input, grid=tmp, mode='bilinear', padding_mode='zeros',
+                                           align_corners=False).squeeze(2)
 
 
 def lin_interpolate(kernel, x):

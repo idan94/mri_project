@@ -56,38 +56,13 @@ class SubSamplingLayer(nn.Module):
                                              requires_grad=trajectory_learning)
 
     def forward(self, k_space_input):
-        # plt.figure()
-        # plt.imshow(print_complex_kspace_tensor(k_space_input[0].squeeze().detach().cpu()), cmap='gray')
-        # plt.title('Given K SPACE')
-        # plt.show()
-
-        # full_image = transforms.ifft2(k_space_input)
-        # plt.figure()
-        # plt.imshow(print_complex_image_tensor(full_image[0].squeeze().detach().cpu()), cmap='gray')
-        # plt.title('Image from given K SPACE')
-        # plt.show()
-
         # Fix dimensions for the interpolation
         # We want k space shape will be: (Channels, Batch Size, Resolution, Resolution, 2)
         # When 2(last spot) stands for the Tensor's complex numbers
         k_space_input = k_space_input.permute(0, 1, 4, 2, 3).squeeze(1)
         sub_ksp = interp.bilinear_interpolate_torch_gridsample(k_space_input, self.trajectory)
         output = nufft.nufft_adjoint(sub_ksp, self.trajectory, k_space_input.shape, device=sub_ksp.device)
-
-        # fixed_output = output.squeeze()[2].detach().cpu()
-        # plt.figure()
-        # plt.imshow(print_complex_image_tensor(fixed_output), cmap='gray')
-        # plt.title('After nufft MASKED K SPACE')
-        # plt.show()
-        # fixed_output_kspace = transforms.fft2(fixed_output)
-        # plt.figure()
-        # plt.imshow(print_complex_kspace_tensor(fixed_output_kspace), cmap='gray')
-        # plt.title('K space of Output')
-        # plt.show()
-
-        # Add channel dimension:
         output = output.unsqueeze(1)
-
         return output
 
     def get_trajectory(self):
@@ -102,41 +77,11 @@ class SubSamplingModel(nn.Module):
         super().__init__()
         self.print = 0
         self.sub_sampling_layer = SubSamplingLayer(decimation_rate, resolution, trajectory_learning)
-        self.unet = UnetModel(2, 2, 32, 4, 0)
-
-        # self.reconstruction_model = nn.Sequential(
-        #     nn.Conv2d(2, 6, 3, padding=(1, 1)),
-        #     nn.Tanh(),
-        #     nn.Conv2d(6, 15, 3, padding=(1, 1)),
-        #     nn.Tanh(),
-        #     nn.Conv2d(15, 3, 3, padding=(1, 1)),
-        #     nn.Tanh(),
-        #     nn.Conv2d(3, 1, 5, padding=(2, 2)),
-        # )
+        self.reconstruction_model = UnetModel(2, 1, 12, 4, 0)
 
     def forward(self, input_data):
-        image = transforms.ifft2(input_data.squeeze()[2].detach().cpu())
-        # plt.figure()
-        # plt.imshow(print_complex_image_tensor(image), cmap='gray')
-        # plt.title('before forward!!!')
-        # plt.show()
-
         input_data = self.sub_sampling_layer(input_data)
-
-        # plt.figure()
-        # plt.imshow(print_complex_image_tensor(input_data.squeeze()[2].detach().cpu()), cmap='gray')
-        # plt.title('before reconstruction')
-        # plt.show()
-
-        output = self.unet(input_data.squeeze().permute(0, 3, 1, 2))
-        if self.print % 5 == 0:
-            plt.figure()
-            plt.imshow(output.squeeze()[2].detach().cpu(), cmap='gray')
-            plt.title('AFTER reconstruction')
-            plt.show()
-
-        self.print += 1
-        # output = torch.sqrt(output[:, :, 0] ** 2 + output[:, :, 1] ** 2)
+        output = self.reconstruction_model(input_data.squeeze(1).permute(0, 3, 1, 2))
         return output
 
     def get_trajectory(self):
