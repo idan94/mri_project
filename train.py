@@ -23,18 +23,11 @@ def print_complex_image_tensor(image):
 
 
 def data_transform(k_space, mask, target, attrs, f_name, slice):
-    # print(attrs)
     full_k_space = utils.to_tensor(k_space)
-    narrowed_k_space = torch.narrow(full_k_space, 1, attrs['padding_left'],
-                                    attrs['padding_right'] - attrs['padding_left'])
+
     full_image = utils.ifft2(full_k_space)
 
-    # full_image, mean, std = transforms.normalize_instance(full_image, eps=1e-11)
-    # full_image = full_image.clamp(-6, 6)
-
     target = utils.to_tensor(target)
-    # target = transforms.normalize(target, mean, std, eps=1e-11)
-    # target = target.clamp(-6, 6)
 
     cropped_image = utils.complex_center_crop(full_image, (320, 320))
 
@@ -43,10 +36,10 @@ def data_transform(k_space, mask, target, attrs, f_name, slice):
     return cropped_k_space, cropped_image, slice, target
 
 
-def train_model(network, train_data, number_of_epochs,learning_rate=0.05,learning_rate_decay = True):
+def train_model(network, train_data, number_of_epochs, learning_rate=0.05, learning_rate_decay=True):
     network = network.to(device)
     # define loos and optimizer
-    optimizer = optim.Adam(network.parameters(),learning_rate)
+    optimizer = optim.Adam(network.parameters(), learning_rate)
     print('Starting Training')
     start_time = time.time()
     print("train_data len is: " + str(len(train_data)))
@@ -82,7 +75,7 @@ def train_model(network, train_data, number_of_epochs,learning_rate=0.05,learnin
     print('Finished Training')
 
 
-def test_model(model, data,limit=10,seed=0):
+def test_model(model, data, limit=10, seed=0):
     # the limit makes sure the amount of picture will not be too large
     print('Starting Testing')
     # make sure to pick the same pictures every time
@@ -103,7 +96,10 @@ def test_model(model, data,limit=10,seed=0):
             if i == limit:
                 break
 
-
+def print_trajectory(model):
+    plt.imshow(model.return_trajectory_matrix(),cmap='gray')
+    plt.title('the trajectory found')
+    plt.show()
 
 def load_data():
     data_path = 'singlecoil_val'
@@ -143,10 +139,9 @@ def main():
 
 if __name__ == '__main__':
     # path = './network_5_epochs.pth'
-    # model = SubSamplingModel(decimation_rate=4, resolution=320, trajectory_learning=True)
+    # model = SubSamplingModel(decimation_rate=1, resolution=320, trajectory_learning=True)
     # model = model.to(device)
     # model.load_state_dict(torch.load(path))
     # model.eval()
-    # data = load_data()
-    # test_model(model,data)
-   main()
+    # print_trajectory(model)
+    main()

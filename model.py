@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import torch
 from torch import nn
-
+import numpy as np
 import utils
 from models.unet.unet_model import UnetModel
 
@@ -15,13 +15,6 @@ def print_complex_kspace_tensor(k_space):
 def print_complex_image_tensor(image):
     return torch.sqrt(image[:, :, 0] ** 2 + image[:, :, 1] ** 2)
 
-
-class Flatten(torch.nn.Module):
-    def forward(self, x):
-        batch_size = x.shape[0]
-        return x.view(batch_size, -1)
-
-
 class SubSamplingLayer(nn.Module):
 
     # This one gives us FULL mask
@@ -29,11 +22,7 @@ class SubSamplingLayer(nn.Module):
         index = 0
         every_point = torch.zeros(self.resolution * self.resolution, 2)
         for i in range(self.resolution):
-            # if 140 <= i <= 170:
-            # continue
             for j in range(self.resolution):
-                # if 120 <= j <= 160:
-                # continue
                 every_point[index] = torch.tensor([i, j])
                 index += 1
         every_point = every_point - (0.5 * self.resolution)
@@ -48,9 +37,8 @@ class SubSamplingLayer(nn.Module):
         super().__init__()
         self.decimation_rate = decimation_rate
         self.resolution = resolution
-        # self.trajectory_learning = trajectory_learning
         self.num_measurements = resolution ** 2 // decimation_rate
-        self.trajectory = torch.nn.Parameter(self.get_init_trajectory_full(),
+        self.trajectory = torch.nn.Parameter(self.get_init_trajectory_random_uniform(),
                                              requires_grad=trajectory_learning)
 
     def forward(self, k_space_input):
@@ -84,3 +72,9 @@ class SubSamplingModel(nn.Module):
 
     def get_trajectory(self):
         return self.subsampling.get_trajectory()
+
+    def return_trajectory_matrix(self):
+        map = np.zeros((self.sub_sampling_layer.resolution, self.sub_sampling_layer.resolution))
+        clammped_trajectory = np.round(self.sub_sampling_layer.trajectory.detach().numpy()).astype(int)
+        map[clammped_trajectory] = 1
+        return map
