@@ -129,14 +129,14 @@ def main():
         print('Dataloader failed')
         return
     else:
-        train_model(model, data, 5)
-        test_model(model, data)
+        train_model(model, data, 50)
+        # test_model(model, data)
     # path = './network_30_epochs.pth'
     # model.load_state_dict(torch.load(path))
 
     # train(train_loader, network, 20)
-    # path = './network.pth'
-    # torch.save(network.state_dict(), path)
+    path = './network_50_epochs.pth'
+    torch.save(model.state_dict(), path)
 
 
 if __name__ == '__main__':
