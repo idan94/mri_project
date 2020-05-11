@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 from mri_data import SliceData
 from model import SubSamplingModel
 import utils
+from SSIM import ssim
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -46,9 +47,7 @@ def data_transform(k_space, mask, target, attrs, f_name, slice):
 def train_model(network, train_data, number_of_epochs):
     network = network.to(device)
     # define loos and optimizer
-    loss_function = nn.MSELoss()
     optimizer = optim.Adam(network.parameters(), 0.03)
-    a = [b for b in network.parameters()]
     print(network.parameters())
     print('Starting Training')
     start_time = time.time()
@@ -68,7 +67,7 @@ def train_model(network, train_data, number_of_epochs):
             optimizer.zero_grad()
 
             output = network(cropped_k_space)
-            loss = functional.l1_loss(output.squeeze(), target)
+            loss = ssim(output, target.unsqueeze(1))
             loss.backward()
             optimizer.step()
             if iter % 30 == 0:
