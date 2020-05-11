@@ -3,7 +3,7 @@ import torch
 from torch import nn
 import numpy as np
 import utils
-from models.unet.unet_model import UnetModel
+from unet_model import UnetModel
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
