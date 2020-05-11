@@ -2,9 +2,7 @@ import matplotlib.pyplot as plt
 import torch
 from torch import nn
 
-import pytorch_nufft.interp as interp
-import pytorch_nufft.nufft as nufft
-from data import transforms
+import utils
 from models.unet.unet_model import UnetModel
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -60,8 +58,8 @@ class SubSamplingLayer(nn.Module):
         # We want k space shape will be: (Channels, Batch Size, Resolution, Resolution, 2)
         # When 2(last spot) stands for the Tensor's complex numbers
         k_space_input = k_space_input.permute(0, 1, 4, 2, 3).squeeze(1)
-        sub_ksp = interp.bilinear_interpolate_torch_gridsample(k_space_input, self.trajectory)
-        output = nufft.nufft_adjoint(sub_ksp, self.trajectory, k_space_input.shape, device=sub_ksp.device)
+        sub_ksp = utils.bilinear_interpolate_torch_gridsample(k_space_input, self.trajectory)
+        output = utils.nufft_adjoint(sub_ksp, self.trajectory, k_space_input.shape, device=sub_ksp.device)
         output = output.unsqueeze(1)
         return output
 

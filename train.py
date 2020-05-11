@@ -7,9 +7,9 @@ from torch import nn
 from torch.nn import functional
 from torch.utils.data import DataLoader
 
-from data import transforms
-from data.mri_data import SliceData
+from mri_data import SliceData
 from model import SubSamplingModel
+import utils
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -24,21 +24,21 @@ def print_complex_image_tensor(image):
 
 def data_transform(k_space, mask, target, attrs, f_name, slice):
     # print(attrs)
-    full_k_space = transforms.to_tensor(k_space)
+    full_k_space = utils.to_tensor(k_space)
     narrowed_k_space = torch.narrow(full_k_space, 1, attrs['padding_left'],
                                     attrs['padding_right'] - attrs['padding_left'])
-    full_image = transforms.ifft2(full_k_space)
+    full_image = utils.ifft2(full_k_space)
 
     # full_image, mean, std = transforms.normalize_instance(full_image, eps=1e-11)
     # full_image = full_image.clamp(-6, 6)
 
-    target = transforms.to_tensor(target)
+    target = utils.to_tensor(target)
     # target = transforms.normalize(target, mean, std, eps=1e-11)
     # target = target.clamp(-6, 6)
 
-    cropped_image = transforms.complex_center_crop(full_image, (320, 320))
+    cropped_image = utils.complex_center_crop(full_image, (320, 320))
 
-    cropped_k_space = transforms.fft2(cropped_image)
+    cropped_k_space = utils.fft2(cropped_image)
 
     return cropped_k_space, cropped_image, slice, target
 
@@ -47,7 +47,8 @@ def train_model(network, train_data, number_of_epochs):
     network = network.to(device)
     # define loos and optimizer
     loss_function = nn.MSELoss()
-    optimizer = optim.Adam(network.parameters(), 0.01)
+    optimizer = optim.Adam(network.parameters(), 0.03)
+    a = [b for b in network.parameters()]
     print(network.parameters())
     print('Starting Training')
     start_time = time.time()
@@ -70,7 +71,7 @@ def train_model(network, train_data, number_of_epochs):
             loss = functional.l1_loss(output.squeeze(), target)
             loss.backward()
             optimizer.step()
-            if iter % 100 == 0:
+            if iter % 30 == 0:
                 print("Iter number is: " + str(iter))
             # print statistics
             running_loss += loss.item()
@@ -96,6 +97,7 @@ def test_model(model, data):
                 plt.imshow(target[0].squeeze().detach().cpu(), cmap='gray')
                 plt.title('target image')
                 plt.show()
+                a = 5
 
 
 def load_data():
@@ -128,14 +130,14 @@ def main():
         print('Dataloader failed')
         return
     else:
-        train_model(model, data, 50)
-        # test_model(model, data)
-    path = './network_50_epochs.pth'
+        train_model(model, data, 5)
+        test_model(model, data)
+    # path = './network_30_epochs.pth'
     # model.load_state_dict(torch.load(path))
-    torch.save(model.state_dict(), path)
+
     # train(train_loader, network, 20)
     # path = './network.pth'
-
+    # torch.save(network.state_dict(), path)
 
 
 if __name__ == '__main__':
