@@ -1,10 +1,9 @@
 import matplotlib.pyplot as plt
 import torch
 from torch import nn
-
+import numpy as np
 import pytorch_nufft.interp as interp
 import pytorch_nufft.nufft as nufft
-from data import transforms
 from models.unet.unet_model import UnetModel
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -75,14 +74,19 @@ class SubSamplingLayer(nn.Module):
 class SubSamplingModel(nn.Module):
     def __init__(self, decimation_rate, resolution, trajectory_learning):
         super().__init__()
-        self.print = 0
         self.sub_sampling_layer = SubSamplingLayer(decimation_rate, resolution, trajectory_learning)
-        self.reconstruction_model = UnetModel(2, 1, 12, 4, 0)
+        self.reconstruction_model = UnetModel(2, 1, 4, 4, 0)
 
     def forward(self, input_data):
-        input_data = self.sub_sampling_layer(input_data)
-        output = self.reconstruction_model(input_data.squeeze(1).permute(0, 3, 1, 2))
+        image_from_sub_sampling = self.sub_sampling_layer(input_data)
+        output = self.reconstruction_model(image_from_sub_sampling.squeeze(1).permute(0, 3, 1, 2))
         return output
 
     def get_trajectory(self):
         return self.subsampling.get_trajectory()
+
+    def get_trajectory_matrix(self):
+        trajectory_matrix = np.zeros((self.resolution, self.resolution))
+        trajectory_points = np.round(self.trajectory.detach().numpy()).astype(int)
+        trajectory_matrix[trajectory_points] = 1
+        return trajectory_matrix

@@ -1,12 +1,16 @@
+import pathlib
 import time
 
 import matplotlib.pyplot as plt
 import torch
+import torch.nn as nn
 import torch.optim as optim
-from torch import nn
+import torchvision
+from tensorboardX import SummaryWriter
 from torch.nn import functional
 from torch.utils.data import DataLoader
 
+from common.args import Args
 from data import transforms
 from data.mri_data import SliceData
 from model import SubSamplingModel
@@ -22,120 +26,197 @@ def print_complex_image_tensor(image):
     return torch.sqrt(image[:, :, 0] ** 2 + image[:, :, 1] ** 2)
 
 
-def data_transform(k_space, mask, target, attrs, f_name, slice):
-    # print(attrs)
-    full_k_space = transforms.to_tensor(k_space)
-    narrowed_k_space = torch.narrow(full_k_space, 1, attrs['padding_left'],
-                                    attrs['padding_right'] - attrs['padding_left'])
-    full_image = transforms.ifft2(full_k_space)
+class DataTransform:
+    def __init__(self, resolution) -> None:
+        """
+        Args:
+            resolution (int): Resolution of the image. (320 for knee, 384 for brain)
+        """
+        self.resolution = resolution
 
-    # full_image, mean, std = transforms.normalize_instance(full_image, eps=1e-11)
-    # full_image = full_image.clamp(-6, 6)
+    def __call__(self, k_space, mask, target, attrs, f_name, slice):
+        """
+        Args:
+            kspace (numpy.array): Input k-space of shape (num_coils, rows, cols, 2) for multi-coil
+                data or (rows, cols, 2) for single coil data.
+            mask (numpy.array): Mask from the test dataset
+            target (numpy.array): Target image
+            attrs (dict): Acquisition related information stored in the HDF5 object.
+            fname (str): File name
+            slice (int): Serial number of the slice.
+        Returns:
+            (tuple): tuple containing:
+                k_space (torch.Tensor): k-space(resolution x resolution x 2)
+                target (torch.Tensor): Target image converted to a torch Tensor.
+                fname (str): File name
+                slice (int): Serial number of the slice.
+        """
+        k_space = transforms.to_tensor(k_space)
+        full_image = transforms.ifft2(k_space)
+        cropped_image = transforms.complex_center_crop(full_image, (self.resolution, self.resolution))
+        k_space = transforms.fft2(cropped_image)
+        target = transforms.to_tensor(target)
+        return k_space, target, f_name, slice
 
-    target = transforms.to_tensor(target)
-    # target = transforms.normalize(target, mean, std, eps=1e-11)
-    # target = target.clamp(-6, 6)
 
-    cropped_image = transforms.complex_center_crop(full_image, (320, 320))
+def save_model(args, output_dir, epoch, model, optimizer):
+    torch.save(
+        {
+            'epoch': epoch,
+            'args': args,
+            'model': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'output_dir': output_dir,
+        },
+        f=str(output_dir) + '/model.pt'
+    )
 
-    cropped_k_space = transforms.fft2(cropped_image)
 
-    return cropped_k_space, cropped_image, slice, target
+def visualize(args, epoch, model, data_loader):
+    def save_image(image, tag):
+        image -= image.min()
+        image /= image.max()
+        grid = torchvision.utils.make_grid(image, nrow=4, pad_value=1)
+        args.writer.add_image(tag, grid, epoch)
+
+    model.eval()
+    with torch.no_grad():
+        for i, data in enumerate(data_loader):
+            k_space, target, f_name, slice = data
+            k_space = k_space.unsqueeze(1).to(device)
+            target = target.unsqueeze(1).to(device)
+            save_image(target, 'Target')
+            if epoch != 0:
+                output = model(k_space.clone())
+                corrupted = model.sub_sampling_layer(k_space)
+
+                save_image(output, 'Reconstruction')
+                corrupted = torch.sqrt(corrupted[..., 0] ** 2 + corrupted[..., 1] ** 2)
+                save_image(corrupted, 'Corrupted')
+                save_image(torch.abs(target - output), 'Error')
+            break
 
 
-def train_model(network, train_data, number_of_epochs):
-    network = network.to(device)
-    # define loos and optimizer
-    loss_function = nn.MSELoss()
-    optimizer = optim.Adam(network.parameters(), 0.01)
-    print(network.parameters())
+def train_model(model, train_data, display_data, args):
+    model = model.to(device)
+
+    # Define loss and optimizer
+    optimizer = optim.Adam(model.parameters(), args.lr)
+
     print('Starting Training')
     start_time = time.time()
+    over_all_running_time = 0
     print("train_data len is: " + str(len(train_data)))
-    for epoch_number in range(number_of_epochs):
+    for epoch_number in range(args.num_epochs):
         running_time = time.time()
         running_loss = 0
-        for iter, data in enumerate(train_data):
-            cropped_k_space, cropped_image, slice, target = data
+        for i, data in enumerate(train_data):
+            k_space, target, f_name, slice = data
             # Add channel dimension:
-            cropped_k_space = cropped_k_space.unsqueeze(1).to(device)
+            k_space = k_space.unsqueeze(1).to(device)
 
-            cropped_k_space = cropped_k_space.to(device)
+            k_space = k_space.to(device)
             target = target.to(device)
 
             # zero the parameter gradients
             optimizer.zero_grad()
 
-            output = network(cropped_k_space)
+            output = model(k_space)
             loss = functional.l1_loss(output.squeeze(), target)
             loss.backward()
+
             optimizer.step()
-            if iter % 100 == 0:
-                print("Iter number is: " + str(iter))
             # print statistics
             running_loss += loss.item()
-        print('running_loss(l1) = ' + str(running_loss))
+            # print(str(iter))
+
+        print('running_loss(L1) = ' + str(running_loss))
         print('Epoch time: ' + str(time.time() - running_time))
-    print('Overall time: ' + str(time.time() - start_time))
+        over_all_running_time += (time.time() - running_time)
+        visualize(args, epoch_number + 1, model, display_data)
+        torch.save(model.state_dict, args.output_dir + '/model_test.pth')
+
+    # save_model(args, args.output_dir, epoch_number, model, optimizer)
+
+    print('Overall run time: ' + str(time.time() - start_time))
+    print('Overall train time: ' + str(over_all_running_time))
+    print(args.test_name)
     print('Finished Training')
+    args.writer.close()
 
 
-def test_model(model, data):
+def test_model(model, data, args):
     print('Starting Testing')
-    i = 0
-    for cropped_k_space, cropped_image, slice, target in data:
-        if slice[0] > 10:
-            i += 1
-            if i % 10 == 0:
-                cropped_k_space = cropped_k_space.to(device)
+    with torch.no_grad():
+        for k_space, target, f_name, slice in data:
+            for i in range(args.display_images):
+                k_space = k_space.to(device)
+
                 plt.figure()
-                image = model(cropped_k_space.unsqueeze(1)).detach().cpu().squeeze()
-                plt.imshow(image[0], cmap='gray')
+                image = model(k_space.unsqueeze(1)).detach().cpu().squeeze()
+                plt.imshow(image[i], cmap='gray')
                 plt.title('the model output')
+
                 plt.figure()
-                plt.imshow(target[0].squeeze().detach().cpu(), cmap='gray')
+                plt.imshow(target[i].squeeze().detach().cpu(), cmap='gray')
                 plt.title('target image')
                 plt.show()
 
 
-def load_data():
-    data_path = 'singlecoil_val'
+def print_trajectory(model):
+    plt.imshow(model.return_trajectory_matrix(), cmap='gray')
+    plt.title('the trajectory found')
+    plt.show()
+
+
+def load_data(args):
     dataset = SliceData(
-        root=data_path,
-        transform=data_transform,
-        challenge='singlecoil', sample_rate=1
+        root=args.data_path,
+        transform=DataTransform(resolution=320),
+        challenge=args.challenge, sample_rate=args.sample_rate
     )
-    data = DataLoader(
+
+    train_data = DataLoader(
         dataset=dataset,
-        batch_size=4,
+        batch_size=args.batch_size,
         shuffle=False,
-        num_workers=0,
+        num_workers=args.num_workers,
         pin_memory=True,
         drop_last=True,
     )
-    return data
+    sample_rate_for_display = (args.sample_rate / (len(train_data)) * args.batch_size) * args.display_images
+    display_dataset = SliceData(
+        root=args.data_path,
+        transform=DataTransform(resolution=320),
+        challenge=args.challenge, sample_rate=sample_rate_for_display
+    )
+    display_data = DataLoader(
+        dataset=display_dataset,
+        batch_size=args.display_images,
+        shuffle=True,
+        num_workers=args.num_workers,
+        pin_memory=True,
+        drop_last=True,
+    )
+    return train_data, display_data
 
 
 def main():
-    data = load_data()
-    model = SubSamplingModel(decimation_rate=4, resolution=320, trajectory_learning=True)
+    args = Args().parse_args()
+    train_data, display_data = load_data(args)
+    model = SubSamplingModel(decimation_rate=args.decimation_rate, resolution=args.resolution, trajectory_learning=True)
+    # Multiple GPUs:
+    if torch.cuda.device_count() > 1:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
+        model = nn.DataParallel(model)
     model = model.to(device)
 
-    # Print summary of the model
-    # summary(model, (1, 320, 320, 2))
-
-    if len(data) <= 0:
-        print('Dataloader failed')
-        return
-    else:
-        train_model(model, data, 50)
-        # test_model(model, data)
-    path = './network_50_epochs.pth'
-    # model.load_state_dict(torch.load(path))
-    torch.save(model.state_dict(), path)
-    # train(train_loader, network, 20)
-    # path = './network.pth'
-
+    args.output_dir = 'outputs/' + args.output_dir
+    args.writer = SummaryWriter(log_dir=args.output_dir)
+    pathlib.Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    with open(args.output_dir + '/args.txt', "w") as text_file:
+        print(vars(args), file=text_file)
+    train_model(model, train_data, display_data, args)
 
 
 if __name__ == '__main__':

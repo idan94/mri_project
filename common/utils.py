@@ -4,9 +4,8 @@ Copyright (c) Facebook, Inc. and its affiliates.
 This source code is licensed under the MIT license found in the
 LICENSE file in the root directory of this source tree.
 """
-import json
-
 import h5py
+import torch
 
 
 def save_reconstructions(reconstructions, out_dir):
@@ -37,3 +36,11 @@ def tensor_to_complex_np(data):
     """
     data = data.numpy()
     return data[..., 0] + 1j * data[..., 1]
+
+
+def print_complex_kspace_tensor(k_space):
+    return torch.log(torch.sqrt(k_space[:, :, 0] ** 2 + k_space[:, :, 1] ** 2) + 1e-9)
+
+
+def print_complex_image_tensor(image):
+    return torch.sqrt(image[:, :, 0] ** 2 + image[:, :, 1] ** 2)
