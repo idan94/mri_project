@@ -14,6 +14,7 @@ from common.args import Args
 from data import transforms
 from data.mri_data import SliceData
 from model import SubSamplingModel
+from SSIM import ssim as SSIM
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -122,7 +123,7 @@ def train_model(model, train_data, display_data, args):
             optimizer.zero_grad()
 
             output = model(k_space)
-            loss = functional.l1_loss(output.squeeze(), target)
+            loss = SSIM(output, target.unsqueeze(1))
             loss.backward()
 
             optimizer.step()
