@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 from tensorboardX import SummaryWriter
-from torch.nn import functional
+from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from common.args import Args
@@ -24,6 +24,33 @@ def print_complex_kspace_tensor(k_space):
 
 def print_complex_image_tensor(image):
     return torch.sqrt(image[:, :, 0] ** 2 + image[:, :, 1] ** 2)
+
+
+class SSIM(nn.Module):
+    def __init__(self, win_size=7, k1=0.01, k2=0.03):
+        super().__init__()
+        self.win_size = win_size
+        self.k1, self.k2 = k1, k2
+        self.register_buffer('w', torch.ones(1, 1, win_size, win_size) / win_size ** 2)
+        NP = win_size ** 2
+        self.cov_norm = NP / (NP - 1)
+
+    def forward(self, X, Y, data_range):
+        data_range = data_range[:, None, None, None]
+        C1 = ((self.k1 * data_range) ** 2).to(device)
+        C2 = ((self.k2 * data_range) ** 2).to(device)
+        ux = F.conv2d(X, self.w)
+        uy = F.conv2d(Y, self.w)
+        uxx = F.conv2d(X * X, self.w)
+        uyy = F.conv2d(Y * Y, self.w)
+        uxy = F.conv2d(X * Y, self.w)
+        vx = self.cov_norm * (uxx - ux * ux)
+        vy = self.cov_norm * (uyy - uy * uy)
+        vxy = self.cov_norm * (uxy - ux * uy)
+        A1, A2, B1, B2 = (2 * ux * uy + C1, 2 * vxy + C2, ux ** 2 + uy ** 2 + C1, vx + vy + C2)
+        D = B1 * B2
+        S = (A1 * A2) / D
+        return 1 - S.mean()
 
 
 class DataTransform:
@@ -55,7 +82,14 @@ class DataTransform:
         full_image = transforms.ifft2(k_space)
         cropped_image = transforms.complex_center_crop(full_image, (self.resolution, self.resolution))
         k_space = transforms.fft2(cropped_image)
+        # Normalize input
+        cropped_image, mean, std = transforms.normalize_instance(cropped_image, eps=1e-11)
+        cropped_image = cropped_image.clamp(-6, 6)
+        # Normalize target
         target = transforms.to_tensor(target)
+        target = transforms.center_crop(target, (self.resolution, self.resolution))
+        target = transforms.normalize(target, mean, std, eps=1e-11)
+        target = target.clamp(-6, 6)
         return k_space, target, f_name, slice
 
 
@@ -88,7 +122,10 @@ def visualize(args, epoch, model, data_loader):
             save_image(target, 'Target')
             if epoch != 0:
                 output = model(k_space.clone())
-                corrupted = model.sub_sampling_layer(k_space)
+                if torch.cuda.device_count() > 1:
+                    corrupted = model.module.sub_sampling_layer(k_space)
+                else:
+                    corrupted = model.sub_sampling_layer(k_space)
 
                 save_image(output, 'Reconstruction')
                 corrupted = torch.sqrt(corrupted[..., 0] ** 2 + corrupted[..., 1] ** 2)
@@ -106,6 +143,7 @@ def train_model(model, train_data, display_data, args):
     print('Starting Training')
     start_time = time.time()
     over_all_running_time = 0
+    loss_fn = nn.SmoothL1Loss()
     print("train_data len is: " + str(len(train_data)))
     for epoch_number in range(args.num_epochs):
         running_time = time.time()
@@ -122,7 +160,8 @@ def train_model(model, train_data, display_data, args):
             optimizer.zero_grad()
 
             output = model(k_space)
-            loss = functional.l1_loss(output.squeeze(), target)
+            output = output.to(device)
+            loss = loss_fn(output, target.unsqueeze(1))
             loss.backward()
 
             optimizer.step()
@@ -172,14 +211,14 @@ def print_trajectory(model):
 def load_data(args):
     dataset = SliceData(
         root=args.data_path,
-        transform=DataTransform(resolution=320),
+        transform=DataTransform(resolution=args.resolution),
         challenge=args.challenge, sample_rate=args.sample_rate
     )
 
     train_data = DataLoader(
         dataset=dataset,
         batch_size=args.batch_size,
-        shuffle=False,
+        shuffle=True,
         num_workers=args.num_workers,
         pin_memory=True,
         drop_last=True,
@@ -187,7 +226,7 @@ def load_data(args):
     sample_rate_for_display = (args.sample_rate / (len(train_data)) * args.batch_size) * args.display_images
     display_dataset = SliceData(
         root=args.data_path,
-        transform=DataTransform(resolution=320),
+        transform=DataTransform(resolution=args.resolution),
         challenge=args.challenge, sample_rate=sample_rate_for_display
     )
     display_data = DataLoader(
