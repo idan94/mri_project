@@ -123,7 +123,8 @@ def train_model(model, train_data, display_data, args):
             optimizer.zero_grad()
 
             output = model(k_space)
-            loss = SSIM(output, target.unsqueeze(1))
+            # SSIM will give 1 if the images structures similar and o if they are different
+            loss = 1 - SSIM(output, target.unsqueeze(1))
             loss.backward()
 
             optimizer.step()
@@ -131,7 +132,7 @@ def train_model(model, train_data, display_data, args):
             running_loss += loss.item()
             # print(str(iter))
 
-        print('running_loss(L1) = ' + str(running_loss))
+        print('running_loss(SSIM) = ' + str(running_loss))
         print('Epoch time: ' + str(time.time() - running_time))
         over_all_running_time += (time.time() - running_time)
         visualize(args, epoch_number + 1, model, display_data)
@@ -193,7 +194,7 @@ def load_data(args):
     )
     display_data = DataLoader(
         dataset=display_dataset,
-        batch_size=args.display_images,
+        batch_size=1,
         shuffle=True,
         num_workers=args.num_workers,
         pin_memory=True,
@@ -218,7 +219,8 @@ def main():
     with open(args.output_dir + '/args.txt', "w") as text_file:
         print(vars(args), file=text_file)
     train_model(model, train_data, display_data, args)
-
+    name = 'model.pt'
+    torch.save(model.state_dict(),name)
 
 if __name__ == '__main__':
     main()

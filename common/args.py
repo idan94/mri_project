@@ -36,9 +36,9 @@ class Args(argparse.ArgumentParser):
         self.add_argument('--sample-rate', type=float, default=1,
                           help='Fraction of total volumes to include')
         # Optimization parameters
-        self.add_argument('--batch-size', default=12, type=int, help='Mini batch size')
+        self.add_argument('--batch-size', default=4, type=int, help='Mini batch size')
         self.add_argument('--num-epochs', type=int, default=20, help='Number of training epochs')
-        self.add_argument('--lr', type=float, default=0.001, help='Learning rate')
+        self.add_argument('--lr', type=float, default=0.01, help='Learning rate')
         self.add_argument('--lr-step-size', type=int, default=30,
                           help='Period of learning rate decay')
         self.add_argument('--lr-gamma', type=float, default=0.01,
@@ -52,7 +52,7 @@ class Args(argparse.ArgumentParser):
 
         # Output
         self.add_argument('--output-dir', default='last_output', type=str, help='Path to outputs')
-        self.add_argument('--display-images', default=4, type=int,
+        self.add_argument('--display-images', default=5, type=int,
                           help='Number of images(target+output) to display when test method is called')
 
         # Override defaults with passed overrides
