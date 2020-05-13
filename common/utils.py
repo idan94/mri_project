@@ -6,7 +6,7 @@ LICENSE file in the root directory of this source tree.
 """
 import h5py
 import torch
-
+import matplotlib.plt as plt
 
 def save_reconstructions(reconstructions, out_dir):
     """
@@ -44,3 +44,8 @@ def print_complex_kspace_tensor(k_space):
 
 def print_complex_image_tensor(image):
     return torch.sqrt(image[:, :, 0] ** 2 + image[:, :, 1] ** 2)
+
+def print_trajectory(model):
+    plt.imshow(model.return_trajectory_matrix(), cmap='gray')
+    plt.title('the trajectory found')
+    plt.show()

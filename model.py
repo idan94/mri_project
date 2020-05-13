@@ -1,20 +1,13 @@
-import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from torch import nn
-import numpy as np
+
 import pytorch_nufft.interp as interp
 import pytorch_nufft.nufft as nufft
 from models.unet.unet_model import UnetModel
+from subsample_init import TrajectoryInit
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-
-def print_complex_kspace_tensor(k_space):
-    return torch.log(torch.sqrt(k_space[:, :, 0] ** 2 + k_space[:, :, 1] ** 2) + 1e-9)
-
-
-def print_complex_image_tensor(image):
-    return torch.sqrt(image[:, :, 0] ** 2 + image[:, :, 1] ** 2)
 
 
 class Flatten(torch.nn.Module):
@@ -24,35 +17,30 @@ class Flatten(torch.nn.Module):
 
 
 class SubSamplingLayer(nn.Module):
+    def get_init_trajectory(self):
+        trajectory = TrajectoryInit(resolution=self.resolution, device=device)
 
-    # This one gives us FULL mask
-    def get_init_trajectory_full(self):
-        index = 0
-        every_point = torch.zeros(self.resolution * self.resolution, 2)
-        for i in range(self.resolution):
-            # if 140 <= i <= 170:
-            # continue
-            for j in range(self.resolution):
-                # if 120 <= j <= 160:
-                # continue
-                every_point[index] = torch.tensor([i, j])
-                index += 1
-        every_point = every_point - (0.5 * self.resolution)
-        every_point = every_point.to(device)
-        return every_point
+        if self.subsampling_trajectory == 'full':
+            trajectory = trajectory.full()
+        if self.subsampling_trajectory == 'rows':
+            trajectory = trajectory.subsample_random_rows(5)
+        if self.subsampling_trajectory == 'colomns':
+            trajectory = trajectory.subsample_random_cols(5)
+        if self.subsampling_trajectory == 'spiral':
+            trajectory = trajectory.spiral(5, 2)  # samples, density
 
-    def get_init_trajectory_random_uniform(self):
-        x = (torch.rand(self.num_measurements, 2) - 0.5) * self.resolution
-        return x
+        return torch.nn.Parameter(trajectory,
+                                  requires_grad=self.trajectory_learning)
 
-    def __init__(self, decimation_rate, resolution, trajectory_learning: bool):
+    def __init__(self, decimation_rate, resolution, trajectory_learning: bool, subsampling_trajectory):
         super().__init__()
         self.decimation_rate = decimation_rate
         self.resolution = resolution
+        self.trajectory_learning = trajectory_learning
+        self.subsampling_trajectory = subsampling_trajectory
         # self.trajectory_learning = trajectory_learning
         self.num_measurements = resolution ** 2 // decimation_rate
-        self.trajectory = torch.nn.Parameter(self.get_init_trajectory_full(),
-                                             requires_grad=trajectory_learning)
+        self.trajectory = self.get_init_trajectory()
 
     def forward(self, k_space_input):
         # Fix dimensions for the interpolation
@@ -72,10 +60,14 @@ class SubSamplingLayer(nn.Module):
 
 
 class SubSamplingModel(nn.Module):
-    def __init__(self, decimation_rate, resolution, trajectory_learning):
+    def __init__(self, decimation_rate, resolution, trajectory_learning, subsampling_trajectory, unet_chans,
+                 unet_num_pool_layers,
+                 unet_drop_prob):
         super().__init__()
-        self.sub_sampling_layer = SubSamplingLayer(decimation_rate, resolution, trajectory_learning)
-        self.reconstruction_model = UnetModel(2, 1, 4, 4, 0)
+        self.sub_sampling_layer = SubSamplingLayer(decimation_rate, resolution, trajectory_learning,
+                                                   subsampling_trajectory)
+        self.reconstruction_model = UnetModel(in_chans=2, out_chans=1, chans=unet_chans,
+                                              num_pool_layers=unet_num_pool_layers, drop_prob=unet_drop_prob)
 
     def forward(self, input_data):
         image_from_sub_sampling = self.sub_sampling_layer(input_data)
