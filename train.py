@@ -14,6 +14,7 @@ from common.args import Args
 from data import transforms
 from data.mri_data import SliceData
 from model import SubSamplingModel
+from SSIM import ssim as SSIM
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -24,33 +25,6 @@ def print_complex_kspace_tensor(k_space):
 
 def print_complex_image_tensor(image):
     return torch.sqrt(image[:, :, 0] ** 2 + image[:, :, 1] ** 2)
-
-
-class SSIM(nn.Module):
-    def __init__(self, win_size=7, k1=0.01, k2=0.03):
-        super().__init__()
-        self.win_size = win_size
-        self.k1, self.k2 = k1, k2
-        self.register_buffer('w', torch.ones(1, 1, win_size, win_size) / win_size ** 2)
-        NP = win_size ** 2
-        self.cov_norm = NP / (NP - 1)
-
-    def forward(self, X, Y, data_range):
-        data_range = data_range[:, None, None, None]
-        C1 = ((self.k1 * data_range) ** 2).to(device)
-        C2 = ((self.k2 * data_range) ** 2).to(device)
-        ux = F.conv2d(X, self.w)
-        uy = F.conv2d(Y, self.w)
-        uxx = F.conv2d(X * X, self.w)
-        uyy = F.conv2d(Y * Y, self.w)
-        uxy = F.conv2d(X * Y, self.w)
-        vx = self.cov_norm * (uxx - ux * ux)
-        vy = self.cov_norm * (uyy - uy * uy)
-        vxy = self.cov_norm * (uxy - ux * uy)
-        A1, A2, B1, B2 = (2 * ux * uy + C1, 2 * vxy + C2, ux ** 2 + uy ** 2 + C1, vx + vy + C2)
-        D = B1 * B2
-        S = (A1 * A2) / D
-        return 1 - S.mean()
 
 
 class DataTransform:
@@ -169,7 +143,7 @@ def train_model(model, train_data, display_data, args):
             running_loss += loss.item()
             # print(str(iter))
 
-        print('running_loss(L1) = ' + str(running_loss))
+        print('running_loss(SmoothL1Loss) = ' + str(running_loss))
         print('Epoch time: ' + str(time.time() - running_time))
         over_all_running_time += (time.time() - running_time)
         visualize(args, epoch_number + 1, model, display_data)
@@ -256,7 +230,8 @@ def main():
     with open(args.output_dir + '/args.txt', "w") as text_file:
         print(vars(args), file=text_file)
     train_model(model, train_data, display_data, args)
-
+    name = 'model.pt'
+    torch.save(model.state_dict(),name)
 
 if __name__ == '__main__':
     main()
