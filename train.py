@@ -1,5 +1,6 @@
 import pathlib
 import time
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -61,6 +62,7 @@ def train_model(model, train_data, display_data, args):
         running_time = time.time()
         running_loss = 0
         for i, data in enumerate(train_data):
+            break
             k_space, target, f_name, slice = data
             # Add channel dimension:
             k_space = k_space.unsqueeze(1).to(device)
@@ -149,7 +151,7 @@ def visualize(args, epoch, model, data_loader):
                 else:
                     corrupted = model.sub_sampling_layer(k_space)
                     trajectory = model.sub_sampling_layer.trajectory
-                trajectory = torch.tensor(to_trajectory_image(args.resolution, trajectory.detach().cpu().numpy()))
+                trajectory = torch.tensor(to_trajectory_image(args.resolution, trajectory.cpu().detach().numpy()))
                 save_image(trajectory, 'Trajectory')
                 save_image(output, 'Reconstruction')
                 corrupted = torch.sqrt(corrupted[..., 0] ** 2 + corrupted[..., 1] ** 2)

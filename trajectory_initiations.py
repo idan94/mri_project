@@ -14,7 +14,7 @@ def full(resolution):
 
 
 def random_cols(resolution, num_of_cols_to_sample):
-    cols = np.random.randint(0, resolution, num_of_cols_to_sample)
+    cols = np.random.randint(0, resolution, int(num_of_cols_to_sample))
     indexes_array = []
     for col in cols:
         col_indexes = [[i, col] for i in range(resolution)]
@@ -23,7 +23,7 @@ def random_cols(resolution, num_of_cols_to_sample):
 
 
 def random_rows(resolution, num_of_rows_to_sample):
-    rows = np.random.randint(0, resolution, num_of_rows_to_sample)
+    rows = np.random.randint(0, resolution, int(num_of_rows_to_sample))
     indexes_array = []
     for row in rows:
         col_indexes = [[row, i] for i in range(resolution)]
