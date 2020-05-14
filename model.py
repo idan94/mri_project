@@ -17,6 +17,16 @@ class Flatten(torch.nn.Module):
 
 
 class SubSamplingLayer(nn.Module):
+    def __init__(self, decimation_rate, resolution, trajectory_learning: bool, subsampling_trajectory):
+        super().__init__()
+        self.decimation_rate = decimation_rate
+        self.resolution = resolution
+        self.trajectory_learning = trajectory_learning
+        self.subsampling_trajectory = subsampling_trajectory
+        # self.trajectory_learning = trajectory_learning
+        self.num_measurements = resolution ** 2 // decimation_rate
+        self.trajectory = self.get_init_trajectory()
+
     def get_init_trajectory(self):
         trajectory = TrajectoryInit(resolution=self.resolution, device=device)
 
@@ -31,16 +41,6 @@ class SubSamplingLayer(nn.Module):
 
         return torch.nn.Parameter(trajectory,
                                   requires_grad=self.trajectory_learning)
-
-    def __init__(self, decimation_rate, resolution, trajectory_learning: bool, subsampling_trajectory):
-        super().__init__()
-        self.decimation_rate = decimation_rate
-        self.resolution = resolution
-        self.trajectory_learning = trajectory_learning
-        self.subsampling_trajectory = subsampling_trajectory
-        # self.trajectory_learning = trajectory_learning
-        self.num_measurements = resolution ** 2 // decimation_rate
-        self.trajectory = self.get_init_trajectory()
 
     def forward(self, k_space_input):
         # Fix dimensions for the interpolation

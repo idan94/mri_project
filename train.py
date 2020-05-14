@@ -7,10 +7,10 @@ import torch.optim as optim
 import torchvision
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
-from dataTransform import DataTransform
+
 from common.args import Args
-from data import transforms
 from data.mri_data import SliceData
+from dataTransform import DataTransform
 from model import SubSamplingModel
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -23,10 +23,11 @@ def main():
         decimation_rate=args.decimation_rate,
         resolution=args.resolution,
         trajectory_learning=True,
-
+        subsampling_trajectory=args.subsampling_init,
         unet_chans=args.unet_chans,
         unet_num_pool_layers=args.unet_num_pool_layers,
-        unet_drop_prob=args.unet_drop_prob)
+        unet_drop_prob=args.unet_drop_prob
+    )
     # Multiple GPUs:
     if torch.cuda.device_count() > 1:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
@@ -161,9 +162,6 @@ def get_loss_fn(args):
         return nn.CrossEntropyLoss()
     if args.loss_fn == 'KLD':
         return nn.KLDivLoss()
-
-
-
 
 
 if __name__ == '__main__':

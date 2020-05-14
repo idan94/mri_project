@@ -60,7 +60,8 @@ class Args(argparse.ArgumentParser):
         self.add_argument('--decimation-rate', default=4, type=int,
                           help='Ratio of k-space points to be sampled. If multiple values are '
                                'provided, then one of those is chosen uniformly at random for each volume.')
-        self.add_argument('--subsampling-init', choices=['full', 'rows', 'columns', 'circle'], default='full', type=str,
+        self.add_argument('--subsampling-init', choices=['full', 'rows', 'columns', 'spiral', 'circle'], default='full',
+                          type=str,
                           help='From which subsampling mask to start')
 
         # Output
