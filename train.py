@@ -36,15 +36,13 @@ def main():
         print("Let's use", torch.cuda.device_count(), "GPUs!")
         model = nn.DataParallel(model)
     model = model.to(device)
-
     args.output_dir = 'outputs/' + args.output_dir
     args.writer = SummaryWriter(log_dir=args.output_dir)
     pathlib.Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     with open(args.output_dir + '/args.txt', "w") as text_file:
-        print(vars(args), file=text_file)
+        for arg in vars(args):
+            print(str(arg) + ': ' + str(getattr(args, arg)), file=text_file)
     train_model(model, train_data, display_data, args)
-    name = 'model.pt'
-    torch.save(model.state_dict(), name)
 
 
 def train_model(model, train_data, display_data, args):
@@ -150,8 +148,8 @@ def visualize(args, epoch, model, data_loader):
                 else:
                     corrupted = model.sub_sampling_layer(k_space)
                     trajectory = model.sub_sampling_layer.trajectory
-                trajectory = torch.tensor(to_trajectory_image(args.resolution, trajectory.cpu().detach().numpy()))
-                save_image(trajectory, 'Trajectory')
+                trajectory_image = torch.tensor(to_trajectory_image(args.resolution, trajectory.cpu().detach().numpy()))
+                save_image(trajectory_image, 'Trajectory')
                 save_image(output, 'Reconstruction')
                 corrupted = torch.sqrt(corrupted[..., 0] ** 2 + corrupted[..., 1] ** 2)
                 save_image(corrupted, 'Corrupted')
