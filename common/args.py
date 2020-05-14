@@ -57,10 +57,13 @@ class Args(argparse.ArgumentParser):
                           help='Unet\'s dropout probability')
         self.add_argument('--unet-num-pool-layers', type=int, default=4,
                           help='Unet\'s number of down-sampling and up-sampling layers')
-        self.add_argument('--decimation-rate', default=4, type=int,
+        self.add_argument('--decimation-rate', default=12, type=int,
                           help='Ratio of k-space points to be sampled. If multiple values are '
                                'provided, then one of those is chosen uniformly at random for each volume.')
-        self.add_argument('--subsampling-init', choices=['full', 'rows', 'columns', 'spiral', 'circle'], default='full',
+
+        self.add_argument('--spiral-density', type=float, default=4,
+                          help='The density of the initiation for spiral trajectory')
+        self.add_argument('--subsampling-init', choices=['full', 'rows', 'cols', 'spiral', 'circle'], default='full',
                           type=str,
                           help='From which subsampling mask to start')
 

@@ -1,11 +1,10 @@
-import numpy as np
 import torch
 from torch import nn
 
 import pytorch_nufft.interp as interp
 import pytorch_nufft.nufft as nufft
 from models.unet.unet_model import UnetModel
-from subsample_init import TrajectoryInit
+from trajectory_initiations import *
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -17,29 +16,32 @@ class Flatten(torch.nn.Module):
 
 
 class SubSamplingLayer(nn.Module):
-    def __init__(self, decimation_rate, resolution, trajectory_learning: bool, subsampling_trajectory):
+    def __init__(self, decimation_rate, resolution, trajectory_learning: bool, subsampling_trajectory, spiral_density):
         super().__init__()
         self.decimation_rate = decimation_rate
         self.resolution = resolution
         self.trajectory_learning = trajectory_learning
         self.subsampling_trajectory = subsampling_trajectory
+        self.spiral_density = spiral_density
         # self.trajectory_learning = trajectory_learning
         self.num_measurements = resolution ** 2 // decimation_rate
         self.trajectory = self.get_init_trajectory()
+        self.num_measurements = self.trajectory.shape[0]
 
     def get_init_trajectory(self):
-        trajectory = TrajectoryInit(resolution=self.resolution, device=device)
-
+        trajectory = None
         if self.subsampling_trajectory == 'full':
-            trajectory = trajectory.full()
+            trajectory = full(self.resolution)
         if self.subsampling_trajectory == 'rows':
-            trajectory = trajectory.subsample_random_rows(5)
-        if self.subsampling_trajectory == 'colomns':
-            trajectory = trajectory.subsample_random_cols(5)
+            trajectory = random_rows(self.resolution, self.num_measurements / self.resolution)
+        if self.subsampling_trajectory == 'cols':
+            trajectory = random_cols(self.resolution, self.num_measurements / self.resolution)
         if self.subsampling_trajectory == 'spiral':
-            trajectory = trajectory.spiral(5, 2)  # samples, density
+            trajectory = spiral(self.resolution, self.num_measurements, self.spiral_density)  # samples, density
+        if self.subsampling_trajectory == 'circle':
+            trajectory = circle(self.resolution, self.num_measurements)  # samples, density
 
-        return torch.nn.Parameter(trajectory,
+        return torch.nn.Parameter(torch.tensor(trajectory, dtype=torch.float, device=device),
                                   requires_grad=self.trajectory_learning)
 
     def forward(self, k_space_input):
@@ -60,12 +62,12 @@ class SubSamplingLayer(nn.Module):
 
 
 class SubSamplingModel(nn.Module):
-    def __init__(self, decimation_rate, resolution, trajectory_learning, subsampling_trajectory, unet_chans,
-                 unet_num_pool_layers,
-                 unet_drop_prob):
+    def __init__(self, decimation_rate, resolution, trajectory_learning,
+                 subsampling_trajectory, spiral_density, unet_chans,
+                 unet_num_pool_layers, unet_drop_prob):
         super().__init__()
         self.sub_sampling_layer = SubSamplingLayer(decimation_rate, resolution, trajectory_learning,
-                                                   subsampling_trajectory)
+                                                   subsampling_trajectory, spiral_density)
         self.reconstruction_model = UnetModel(in_chans=2, out_chans=1, chans=unet_chans,
                                               num_pool_layers=unet_num_pool_layers, drop_prob=unet_drop_prob)
 

@@ -12,6 +12,7 @@ from common.args import Args
 from data.mri_data import SliceData
 from dataTransform import DataTransform
 from model import SubSamplingModel
+from trajectory_initiations import to_trajectory_image
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -24,6 +25,7 @@ def main():
         resolution=args.resolution,
         trajectory_learning=True,
         subsampling_trajectory=args.subsampling_init,
+        spiral_density=args.spiral_density,
         unet_chans=args.unet_chans,
         unet_num_pool_layers=args.unet_num_pool_layers,
         unet_drop_prob=args.unet_drop_prob
@@ -143,9 +145,12 @@ def visualize(args, epoch, model, data_loader):
                 output = model(k_space.clone())
                 if torch.cuda.device_count() > 1:
                     corrupted = model.module.sub_sampling_layer(k_space)
+                    trajectory = model.module.sub_sampling_layer.trajectory
                 else:
                     corrupted = model.sub_sampling_layer(k_space)
-
+                    trajectory = model.sub_sampling_layer.trajectory
+                trajectory = torch.tensor(to_trajectory_image(args.resolution, trajectory.detach().cpu().numpy()))
+                save_image(trajectory, 'Trajectory')
                 save_image(output, 'Reconstruction')
                 corrupted = torch.sqrt(corrupted[..., 0] ** 2 + corrupted[..., 1] ** 2)
                 save_image(corrupted, 'Corrupted')
