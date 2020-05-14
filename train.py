@@ -62,7 +62,6 @@ def train_model(model, train_data, display_data, args):
         running_time = time.time()
         running_loss = 0
         for i, data in enumerate(train_data):
-            break
             k_space, target, f_name, slice = data
             # Add channel dimension:
             k_space = k_space.unsqueeze(1).to(device)
