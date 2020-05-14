@@ -19,7 +19,7 @@ def random_cols(resolution, num_of_cols_to_sample):
     for col in cols:
         col_indexes = [[i, col] for i in range(resolution)]
         indexes_array = indexes_array + col_indexes
-    return np.array(indexes_array)
+    return np.array(indexes_array) - resolution // 2
 
 
 def random_rows(resolution, num_of_rows_to_sample):
@@ -28,7 +28,7 @@ def random_rows(resolution, num_of_rows_to_sample):
     for row in rows:
         col_indexes = [[row, i] for i in range(resolution)]
         indexes_array = indexes_array + col_indexes
-    return np.array(indexes_array)
+    return np.array(indexes_array) - resolution // 2
 
 
 def circle(resolution, number_of_samples):
@@ -51,8 +51,8 @@ def circle(resolution, number_of_samples):
                 indexes += [[i, j]]
                 couner += 1
                 if couner == number_of_samples:
-                    return np.array(indexes)
-    return np.array(indexes)
+                    return np.array(indexes) - resolution // 2
+    return np.array(indexes) - resolution // 2
 
 
 def spiral(resolution, samples, density):
@@ -65,16 +65,22 @@ def spiral(resolution, samples, density):
         x = (1 + 5 * t) * np.cos(density * t)
         y = (1 + 5 * t) * np.sin(density * t)
         indexes_array += [[x - middle, y - middle]]
-    return np.round(np.array(indexes_array)).astype(int)
+    return (np.round(np.array(indexes_array)).astype(int) + resolution // 2)
 
 
 def random_dots(resolution, number_of_samples):
-    return np.random.randint(0, resolution - 1, (number_of_samples, 2))
+    return np.random.randint(0, resolution - 1, (number_of_samples, 2)) - resolution // 2
 
 
 def to_trajectory_image(resolution, indexes_array):
+    # handel the centering of the image
+    indexes_array += resolution // 2
+    # handel the padding
+    indexes_array[:,0] += 3
+    indexes_array[:, 1] += 3
     indexes_array = np.round(indexes_array).astype(int)
-    image = np.zeros((resolution, resolution))
+    # add padding
+    image = np.zeros((resolution+5, resolution+5))
     image[indexes_array[:, 0], indexes_array[:, 1]] = 1
     return image
 
@@ -87,4 +93,4 @@ def plot_trajectory(resolution, indexes_array, title):
 
 
 if __name__ == '__main__':
-    plot_trajectory(320, spiral(320, 4266, 5), 'WOW!')
+    plot_trajectory(320, random_dots(320, 100000), 'WOW!')
