@@ -21,18 +21,20 @@ class Args(argparse.ArgumentParser):
         """
 
         super().__init__(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-        self.add_argument('--test-name', type=str, default='temp_test',
-                          help='name for the output dir')
         self.add_argument('--resolution', default=320, type=int, help='Resolution of images (brain \
                 challenge expects resolution of 384, knee resolution expects resolution of 320')
-
+        self.add_argument('--resume', action='store_true',
+                          help='If set, resume the training from a previous model checkpoint'
+                               '"--checkpoint" should be set with this')
+        self.add_argument('--checkpoint', type=str, default='outputs/last_test/model.pt',
+                          help='Path to an existing checkpoint. Used along with "--resume"')
         # Data parameters
         self.add_argument('--challenge', default='singlecoil', choices=['singlecoil', 'multicoil'],
                           help='Which challenge')
-        self.add_argument('--data-path', default='singlecoil_val', type=pathlib.Path, help='Path to the dataset')
+        self.add_argument('--data-path', default='datasets', type=str, help='Path to the dataset directory')
         self.add_argument('--sample-rate', type=float, default=1,
                           help='Fraction of total volumes to include')
-        self.add_argument('--num-workers', default=3, type=int, help='Number of workers for dataLoaders')
+        self.add_argument('--num-workers', default=8, type=int, help='Number of workers for dataLoaders')
         self.add_argument('--seed', default=32, type=int, help='Seed for random number generators')
 
         # Optimization parameters
@@ -68,7 +70,7 @@ class Args(argparse.ArgumentParser):
                           help='From which subsampling mask to start')
 
         # Output
-        self.add_argument('--output-dir', default='last_output', type=str, help='Path to outputs')
+        self.add_argument('--output-dir', default='last_test', type=str, help='Path to outputs')
         self.add_argument('--display-images', default=5, type=int,
                           help='Number of images(target+output) to display when test method is called')
 

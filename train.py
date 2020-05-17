@@ -1,7 +1,6 @@
 import pathlib
 import time
-import matplotlib.pyplot as plt
-
+import pickle
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -19,8 +18,19 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 def main():
+    # Args stuff:
     args = Args().parse_args()
-    train_data, display_data = load_data(args)
+    args.output_dir = 'outputs/' + args.output_dir
+    args.writer = SummaryWriter(log_dir=args.output_dir)
+    pathlib.Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    with open(args.output_dir + '/args.txt', "w") as text_file:
+        for arg in vars(args):
+            print(str(arg) + ': ' + str(getattr(args, arg)), file=text_file)
+
+    # Load data
+    train_data_loader, val_data_loader, display_data_loader = load_data(args)
+
+    # Define model:
     model = SubSamplingModel(
         decimation_rate=args.decimation_rate,
         resolution=args.resolution,
@@ -31,99 +41,138 @@ def main():
         unet_num_pool_layers=args.unet_num_pool_layers,
         unet_drop_prob=args.unet_drop_prob
     )
-    # Multiple GPUs:
+    # # Multiple GPUs:
     if torch.cuda.device_count() > 1:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
         model = nn.DataParallel(model)
     model = model.to(device)
-    args.output_dir = 'outputs/' + args.output_dir
-    args.writer = SummaryWriter(log_dir=args.output_dir)
-    pathlib.Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-    with open(args.output_dir + '/args.txt', "w") as text_file:
-        for arg in vars(args):
-            print(str(arg) + ': ' + str(getattr(args, arg)), file=text_file)
-    train_model(model, train_data, display_data, args)
 
-
-def train_model(model, train_data, display_data, args):
-    model = model.to(device)
-
-    # Define loss and optimizer
+    start_epoch = 0
+    # Define optimizer:
     optimizer = optim.Adam(model.parameters(), args.lr)
+    # Check if to resume or new train
+    if args.resume is True:
+        checkpoint = torch.load(args.checkpoint)
+        old_args = checkpoint['args']
+        # Check if the old and new args are matching
+        assert (args.resolution == old_args.resolution)
+        assert (args.challenge == old_args.challenge)
+        assert (args.unet_chans == old_args.unet_chans)
+        assert (args.unet_drop_prob == old_args.unet_drop_prob)
+        assert (args.unet_num_pool_layers == old_args.unet_num_pool_layers)
+        assert (args.decimation_rate == old_args.decimation_rate)
+        # Load model
+        model.load_state_dict(checkpoint['model'])
+        # Load optimizer
+        # optimizer.load_state_dict(checkpoint['optimizer'])
+        # Set epoch number
+        start_epoch = checkpoint['epoch'] + 1
+    # Train
+    train_model(model, optimizer, train_data_loader, display_data_loader, args, start_epoch)
 
-    print('Starting Training')
+
+def train_model(model, optimizer, train_data, display_data, args, start_epoch):
+    print('~~~Starting Training~~~')
     start_time = time.time()
     over_all_running_time = 0
     loss_fn = get_loss_fn(args)
     print("train_data len is: " + str(len(train_data)))
-    for epoch_number in range(args.num_epochs):
+    for epoch_number in range(start_epoch, start_epoch + args.num_epochs):
         running_time = time.time()
         running_loss = 0
         for i, data in enumerate(train_data):
             k_space, target, f_name, slice = data
             # Add channel dimension:
             k_space = k_space.unsqueeze(1).to(device)
-
+            # Move to device
             k_space = k_space.to(device)
             target = target.to(device)
-
-            # zero the parameter gradients
+            # Zero the parameter gradients
             optimizer.zero_grad()
-
+            # Use model
             output = model(k_space)
+            # Move to device
             output = output.to(device)
+            # Calculate loss
             loss = loss_fn(output, target.unsqueeze(1))
             loss.backward()
-
+            # Make a step(update model parameters)
             optimizer.step()
-            # print statistics
             running_loss += loss.item()
-            # print(str(iter))
 
-        print('running_loss(' + str(args.loss_fn) + ') = ' + str(running_loss))
-        print('Epoch time: ' + str(time.time() - running_time))
+        # Print training progress and save model
+        status_printing = \
+            'Epoch Number: ' + str(epoch_number) + '\n' \
+            + 'Running_loss(' + str(args.loss_fn) + ') = ' + str(running_loss) + '\n' \
+            + 'Epoch time: ' + str(time.time() - running_time)
         over_all_running_time += (time.time() - running_time)
-        visualize(args, epoch_number + 1, model, display_data)
-        torch.save(model.state_dict, args.output_dir + '/model_test.pth')
+        save_model(args, epoch_number, model, optimizer)
+        visualize(args, epoch_number, model, display_data)
+        print(status_printing)
 
-    # save_model(args, args.output_dir, epoch_number, model, optimizer)
-
+    # Print train statistics
     print('Overall run time: ' + str(time.time() - start_time))
     print('Overall train time: ' + str(over_all_running_time))
-    print(args.test_name)
-    print('Finished Training')
+    print('~~~Finished Training~~~')
     args.writer.close()
 
 
+def save_model(args, epoch_number, model, optimizer):
+    save_path = args.output_dir + '/model.pt'
+    if torch.cuda.device_count() > 1:
+        state_dict = model.module.state_dict()
+    else:
+        state_dict = model.state_dict()
+    torch.save(
+        {
+            'model': state_dict,
+            'optimizer': optimizer.state_dict(),
+            'epoch': epoch_number,
+            'args': args,
+        },
+        f=save_path,
+        pickle_module=pickle
+    )
+
+
 def load_data(args):
-    dataset = SliceData(
-        root=args.data_path,
+    train_dataset = SliceData(
+        root=args.data_path + '/singlecoil_train',
         transform=DataTransform(resolution=args.resolution),
         challenge=args.challenge, sample_rate=args.sample_rate
     )
-    train_data = DataLoader(
-        dataset=dataset,
+    train_data_loader = DataLoader(
+        dataset=train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.num_workers,
         pin_memory=True,
         drop_last=True,
     )
-    sample_rate_for_display = (args.sample_rate / (len(train_data)) * args.batch_size) * args.display_images
-    display_dataset = SliceData(
-        root=args.data_path,
+    val_dataset = SliceData(
+        root=args.data_path + '/singlecoil_val',
         transform=DataTransform(resolution=args.resolution),
-        challenge=args.challenge, sample_rate=sample_rate_for_display
+        challenge=args.challenge, sample_rate=args.sample_rate
     )
-    display_data = DataLoader(
-        dataset=display_dataset,
-        batch_size=args.display_images,
-        shuffle=True,
+    val_data_loader = DataLoader(
+        dataset=val_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
         num_workers=args.num_workers,
         pin_memory=True,
         drop_last=True,
     )
-    return train_data, display_data
+    display_dataset = [val_dataset[i] for i in
+                       range(0, len(val_dataset), len(val_dataset) // args.display_images)]
+    display_data_loader = DataLoader(
+        dataset=display_dataset,
+        batch_size=args.display_images,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=True,
+        drop_last=True,
+    )
+    return train_data_loader, val_data_loader, display_data_loader
 
 
 def visualize(args, epoch, model, data_loader):
