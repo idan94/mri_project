@@ -26,7 +26,7 @@ class Args(argparse.ArgumentParser):
         self.add_argument('--resume', action='store_true',
                           help='If set, resume the training from a previous model checkpoint'
                                '"--checkpoint" should be set with this')
-        self.add_argument('--checkpoint', type=str, default='outputs/last_test/model.pt',
+        self.add_argument('--checkpoint', type=str, default='last_test',
                           help='Path to an existing checkpoint. Used along with "--resume"')
         # Data parameters
         self.add_argument('--challenge', default='singlecoil', choices=['singlecoil', 'multicoil'],

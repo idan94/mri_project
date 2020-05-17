@@ -51,7 +51,7 @@ def main():
     optimizer = optim.Adam(model.parameters(), args.lr)
     # Check if to resume or new train
     if args.resume is True:
-        checkpoint = torch.load(args.checkpoint)
+        checkpoint = torch.load(pathlib.Path('outputs/' + args.checkpoint + '/model.pt'))
         old_args = checkpoint['args']
         # Check if the old and new args are matching
         assert (args.resolution == old_args.resolution)
