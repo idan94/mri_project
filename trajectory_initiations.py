@@ -59,7 +59,7 @@ def spiral(resolution, samples, density):
     # the spiral needs to follow the cartesian equation formula
     # r = a*theta
     indexes_array = []
-    middle = (resolution + 1) / 2
+    middle = resolution / 2
     for i in range(samples):
         t = i / (samples / 10) * np.pi
         x = (1 + 5 * t) * np.cos(density * t)
@@ -74,13 +74,14 @@ def random_dots(resolution, number_of_samples):
 
 def to_trajectory_image(resolution, indexes_array):
     # handel the centering of the image
-    indexes_array += resolution // 2
-    # handel the padding
-    indexes_array[:,0] += 3
-    indexes_array[:, 1] += 3
+    # to prevent the changing the trajectory of the trajectory in the model
+    # because we use by reference addressing
+    indexes_array = indexes_array + resolution // 2
+    # make sure the indexes are legal, to prevent overflow
+    print('max: ' + str(np.max(indexes_array)) + ', min: ' + str(np.min(indexes_array)))
+    indexes_array = np.clip(indexes_array,0,resolution-1)
     indexes_array = np.round(indexes_array).astype(int)
-    # add padding
-    image = np.zeros((resolution+5, resolution+5))
+    image = np.zeros((resolution, resolution))
     image[indexes_array[:, 0], indexes_array[:, 1]] = 1
     return image
 
