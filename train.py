@@ -1,6 +1,5 @@
 import pathlib
 import time
-import pickle
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -21,7 +20,7 @@ def main():
     # Args stuff:
     args = Args().parse_args()
     args.output_dir = 'outputs/' + args.output_dir
-    args.writer = SummaryWriter(log_dir=args.output_dir)
+    writer = SummaryWriter(log_dir=args.output_dir)
     pathlib.Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     with open(args.output_dir + '/args.txt', "w") as text_file:
         for arg in vars(args):
@@ -68,10 +67,10 @@ def main():
         # Set epoch number
         start_epoch = checkpoint['epoch'] + 1
     # Train
-    train_model(model, optimizer, train_data_loader, display_data_loader, args, start_epoch)
+    train_model(model, optimizer, train_data_loader, display_data_loader, args, writer, start_epoch)
 
 
-def train_model(model, optimizer, train_data, display_data, args, start_epoch):
+def train_model(model, optimizer, train_data, display_data, args, writer, start_epoch):
     print('~~~Starting Training~~~')
     start_time = time.time()
     over_all_running_time = 0
@@ -107,31 +106,25 @@ def train_model(model, optimizer, train_data, display_data, args, start_epoch):
             + 'Epoch time: ' + str(time.time() - running_time)
         over_all_running_time += (time.time() - running_time)
         save_model(args, epoch_number, model, optimizer)
-        visualize(args, epoch_number, model, display_data)
+        visualize(args, epoch_number, model, display_data, writer)
         print(status_printing)
 
     # Print train statistics
     print('Overall run time: ' + str(time.time() - start_time))
     print('Overall train time: ' + str(over_all_running_time))
     print('~~~Finished Training~~~')
-    args.writer.close()
+    writer.close()
 
 
 def save_model(args, epoch_number, model, optimizer):
-    save_path = args.output_dir + '/model.pt'
-    if torch.cuda.device_count() > 1:
-        state_dict = model.module.state_dict()
-    else:
-        state_dict = model.state_dict()
     torch.save(
         {
-            'model': state_dict,
+            'model': model.state_dict(),
             'optimizer': optimizer.state_dict(),
             'epoch': epoch_number,
             'args': args,
         },
-        f=save_path,
-        pickle_module=pickle
+        pathlib.Path(args.output_dir + '/model.pt'),
     )
 
 
@@ -175,12 +168,12 @@ def load_data(args):
     return train_data_loader, val_data_loader, display_data_loader
 
 
-def visualize(args, epoch, model, data_loader):
+def visualize(args, epoch, model, data_loader, writer):
     def save_image(image, tag):
         image -= image.min()
         image /= image.max()
         grid = torchvision.utils.make_grid(image, nrow=4, pad_value=1)
-        args.writer.add_image(tag, grid, epoch)
+        writer.add_image(tag, grid, epoch)
 
     model.eval()
     with torch.no_grad():
