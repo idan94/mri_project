@@ -42,15 +42,15 @@ def circle(resolution, number_of_samples):
     # we add epsilon because we prefer to take many samples and cut short then take too little and have no way to fix it
     radius = np.sqrt(number_of_samples / np.pi) + 1e-3
     # we will count how many pixels we have created, so we will not create more then allowed
-    couner = 0
+    counter = 0
     indexes = []
     for i in range(resolution):
         for j in range(resolution):
             # check if the distance from the center of the circle is in the allowed radius
             if np.linalg.norm(np.array([i - center, j - center]), 2) <= radius:
                 indexes += [[i, j]]
-                couner += 1
-                if couner == number_of_samples:
+                counter += 1
+                if counter == number_of_samples:
                     return np.array(indexes) - resolution // 2
     return np.array(indexes) - resolution // 2
 
@@ -65,8 +65,19 @@ def spiral(resolution, samples, density):
         x = (1 + 5 * t) * np.cos(density * t)
         y = (1 + 5 * t) * np.sin(density * t)
         indexes_array += [[x - middle, y - middle]]
-    return (np.round(np.array(indexes_array)).astype(int) + resolution // 2)
+    return np.round(np.array(indexes_array)).astype(int) + resolution // 2
 
+# def spiral2(resolution, samples, density):
+#     # the spiral needs to follow the cartesian equation formula
+#     # r = a*theta
+#     indexes_array = []
+#     middle = resolution / 2
+#     for i in range(samples):
+#         t = i / (samples / 10) * np.pi
+#         x = (1 + 5 * t) * np.cos(density * t)
+#         y = (1 + 5 * t) * np.sin(density * t)
+#         indexes_array += [[x - middle, y - middle]]
+#     return np.round(np.array(indexes_array)).astype(int) + resolution // 2
 
 def random_dots(resolution, number_of_samples):
     return np.random.randint(0, resolution - 1, (number_of_samples, 2)) - resolution // 2
@@ -78,8 +89,7 @@ def to_trajectory_image(resolution, indexes_array):
     # because we use by reference addressing
     indexes_array = indexes_array + resolution // 2
     # make sure the indexes are legal, to prevent overflow
-    print('max: ' + str(np.max(indexes_array)) + ', min: ' + str(np.min(indexes_array)))
-    indexes_array = np.clip(indexes_array,0,resolution-1)
+    indexes_array = np.clip(indexes_array, 0, resolution - 1)
     indexes_array = np.round(indexes_array).astype(int)
     image = np.zeros((resolution, resolution))
     image[indexes_array[:, 0], indexes_array[:, 1]] = 1

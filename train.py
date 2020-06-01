@@ -6,7 +6,7 @@ import torch.optim as optim
 import torchvision
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
-
+from torch.nn import functional as F
 from common.args import Args
 from data.mri_data import SliceData
 from dataTransform import DataTransform
@@ -48,7 +48,17 @@ def main():
 
     start_epoch = 0
     # Define optimizer:
-    optimizer = optim.Adam(model.parameters(), args.lr)
+    if torch.cuda.device_count() > 1:
+        sub_parameters = model.module.sub_sampling_layer.parameters()
+        recon_parameters = model.module.reconstruction_model.parameters()
+    else:
+        sub_parameters = model.sub_sampling_layer.parameters()
+        recon_parameters = model.reconstruction_model.parameters()
+
+    optimizer = optim.Adam(
+        [{'params': sub_parameters, 'lr': args.sub_lr},
+         {'params': recon_parameters}]
+        , args.lr)
     # Check if to resume or new train
     if args.resume is True:
         checkpoint = torch.load(pathlib.Path('outputs/' + args.checkpoint + '/model.pt'))
@@ -63,7 +73,7 @@ def main():
         # Load model
         model.load_state_dict(checkpoint['model'])
         # Load optimizer
-        # optimizer.load_state_dict(checkpoint['optimizer'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
         # Set epoch number
         start_epoch = checkpoint['epoch'] + 1
     # Train
@@ -75,6 +85,8 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
     start_time = time.time()
     over_all_running_time = 0
     loss_fn = get_loss_fn(args)
+    gamma = 0.01
+    visualize(args, start_epoch, model, display_data, writer)
     print("train_data len is: " + str(len(train_data)))
     for epoch_number in range(start_epoch, start_epoch + args.num_epochs):
         running_time = time.time()
@@ -93,7 +105,12 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
             # Move to device
             output = output.to(device)
             # Calculate loss
-            loss = loss_fn(output, target.unsqueeze(1))
+            if torch.cuda.device_count() > 1:
+                model_trajectory = model.module.sub_sampling_layer.trajectory
+            else:
+                model_trajectory = model.sub_sampling_layer.trajectory
+            derivative = gamma * calc_derivative(model_trajectory)
+            loss = loss_fn(output, target.unsqueeze(1)) + derivative
             loss.backward()
             # Make a step(update model parameters)
             optimizer.step()
@@ -101,12 +118,12 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
 
         # Print training progress and save model
         status_printing = \
-            'Epoch Number: ' + str(epoch_number) + '\n' \
+            'Epoch Number: ' + str(epoch_number+1) + '\n' \
             + 'Running_loss(' + str(args.loss_fn) + ') = ' + str(running_loss) + '\n' \
             + 'Epoch time: ' + str(time.time() - running_time)
         over_all_running_time += (time.time() - running_time)
-        save_model(args, epoch_number, model, optimizer)
-        visualize(args, epoch_number, model, display_data, writer)
+        save_model(args, epoch_number+1, model, optimizer)
+        visualize(args, epoch_number+1, model, display_data, writer)
         print(status_printing)
 
     # Print train statistics
@@ -114,6 +131,12 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
     print('Overall train time: ' + str(over_all_running_time))
     print('~~~Finished Training~~~')
     writer.close()
+
+
+def calc_derivative(model_trajectory):
+    a = model_trajectory[1:, :] - model_trajectory[:-1, :]
+    derivative = torch.sqrt(torch.sum(torch.pow(F.softshrink(a, 10), 2)))
+    return derivative
 
 
 def save_model(args, epoch_number, model, optimizer):
@@ -182,16 +205,16 @@ def visualize(args, epoch, model, data_loader, writer):
             k_space = k_space.unsqueeze(1).to(device)
             target = target.unsqueeze(1).to(device)
             save_image(target, 'Target')
+            if torch.cuda.device_count() > 1:
+                corrupted = model.module.sub_sampling_layer(k_space)
+                trajectory = model.module.sub_sampling_layer.trajectory
+            else:
+                corrupted = model.sub_sampling_layer(k_space)
+                trajectory = model.sub_sampling_layer.trajectory
+            trajectory_image = torch.tensor(to_trajectory_image(args.resolution, trajectory.cpu().detach().numpy()))
+            save_image(trajectory_image, 'Trajectory')
             if epoch != 0:
                 output = model(k_space.clone())
-                if torch.cuda.device_count() > 1:
-                    corrupted = model.module.sub_sampling_layer(k_space)
-                    trajectory = model.module.sub_sampling_layer.trajectory
-                else:
-                    corrupted = model.sub_sampling_layer(k_space)
-                    trajectory = model.sub_sampling_layer.trajectory
-                trajectory_image = torch.tensor(to_trajectory_image(args.resolution, trajectory.cpu().detach().numpy()))
-                save_image(trajectory_image, 'Trajectory')
                 save_image(output, 'Reconstruction')
                 corrupted = torch.sqrt(corrupted[..., 0] ** 2 + corrupted[..., 1] ** 2)
                 save_image(corrupted, 'Corrupted')

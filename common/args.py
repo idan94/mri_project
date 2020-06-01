@@ -27,7 +27,7 @@ class Args(argparse.ArgumentParser):
                           help='If set, resume the training from a previous model checkpoint'
                                '"--checkpoint" should be set with this')
         self.add_argument('--checkpoint', type=str, default='last_test',
-                          help='Path to an existing checkpoint. Used along with "--resume"')
+                          help='Output dir name of existing checkpoint. Used along with "--resume"')
         # Data parameters
         self.add_argument('--challenge', default='singlecoil', choices=['singlecoil', 'multicoil'],
                           help='Which challenge')
@@ -50,7 +50,7 @@ class Args(argparse.ArgumentParser):
                           help='Multiplicative factor of learning rate decay')
         self.add_argument('--weight-decay', type=float, default=0.,
                           help='Strength of weight decay regularization')
-        self.add_argument('--sub-lr', type=float, default=1e-1, help='learning rate of the sub-sampling layer')
+        self.add_argument('--sub-lr', type=float, default=0.01, help='learning rate of the sub-sampling layer')
 
         # Unet(reconstruction) parameters
         self.add_argument('--unet-chans', type=int, default=16,
@@ -65,7 +65,8 @@ class Args(argparse.ArgumentParser):
 
         self.add_argument('--spiral-density', type=float, default=4,
                           help='The density of the initiation for spiral trajectory')
-        self.add_argument('--subsampling-init', choices=['full', 'rows', 'cols', 'spiral', 'circle'], default='full',
+        self.add_argument('--subsampling-init', choices=['full', 'rows', 'cols', 'spiral', 'circle', 'rand_dots'],
+                          default='full',
                           type=str,
                           help='From which subsampling mask to start')
 
