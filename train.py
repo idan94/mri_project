@@ -69,6 +69,11 @@ def main():
     # Train
     train_model(model, optimizer, train_data_loader, display_data_loader, args, writer, start_epoch)
 
+def penalty(model,args):
+    trajectory = model.get_trajectory()
+    derivative = trajectory[:-1,:] - trajectory[1:,:]
+    second_derivative = derivative[:-1,:] - derivative[1:,:]
+    return args.penalty_weight*(torch.norm(derivative,2) + torch.norm(second_derivative,2))
 
 def train_model(model, optimizer, train_data, display_data, args, writer, start_epoch):
     print('~~~Starting Training~~~')
@@ -93,7 +98,7 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
             # Move to device
             output = output.to(device)
             # Calculate loss
-            loss = loss_fn(output, target.unsqueeze(1))
+            loss = loss_fn(output, target.unsqueeze(1)) + penalty(model,args)
             loss.backward()
             # Make a step(update model parameters)
             optimizer.step()

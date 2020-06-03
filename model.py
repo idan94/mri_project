@@ -77,7 +77,7 @@ class SubSamplingModel(nn.Module):
         return output
 
     def get_trajectory(self):
-        return self.subsampling.get_trajectory()
+        return self.sub_sampling_layer.get_trajectory()
 
     def get_trajectory_matrix(self):
         trajectory_matrix = np.zeros((self.resolution, self.resolution))
