@@ -40,6 +40,8 @@ class SubSamplingLayer(nn.Module):
             trajectory = spiral(self.resolution, self.num_measurements, self.spiral_density)  # samples, density
         if self.subsampling_trajectory == 'circle':
             trajectory = circle(self.resolution, self.num_measurements)  # samples, density
+        if self.subsampling_trajectory == 'rand_dots':
+            trajectory = random_dots(self.resolution, self.num_measurements)
 
         return torch.nn.Parameter(torch.tensor(trajectory, dtype=torch.float, device=device),
                                   requires_grad=self.trajectory_learning)

@@ -199,3 +199,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+*.h5
+.DS_Store
+penalty.py

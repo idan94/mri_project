@@ -53,7 +53,7 @@ class Args(argparse.ArgumentParser):
         self.add_argument('--sub-lr', type=float, default=1e-1, help='learning rate of the sub-sampling layer')
         self.add_argument('--penalty_weight', type=float, default=1e-1,
                           help='the weight that will be given to the penalty over'
-                               ' the speed and acceleration of the trajectory')
+                               ' the speed and accelaretion of the trajectory')
 
         # Unet(reconstruction) parameters
         self.add_argument('--unet-chans', type=int, default=16,
