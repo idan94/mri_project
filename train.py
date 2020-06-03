@@ -98,7 +98,10 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
             # Move to device
             output = output.to(device)
             # Calculate loss
-            loss = loss_fn(output, target.unsqueeze(1)) + penalty(model,args)
+            if torch.cuda.device_count() > 1:
+                loss = loss_fn(output, target.unsqueeze(1)) + penalty(model.module,args)
+            else:
+                loss = loss_fn(output, target.unsqueeze(1)) + penalty(model, args)
             loss.backward()
             # Make a step(update model parameters)
             optimizer.step()
