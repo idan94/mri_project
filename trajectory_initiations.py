@@ -67,17 +67,6 @@ def spiral(resolution, samples, density):
         indexes_array += [[x - middle, y - middle]]
     return np.round(np.array(indexes_array)).astype(int) + resolution // 2
 
-# def spiral2(resolution, samples, density):
-#     # the spiral needs to follow the cartesian equation formula
-#     # r = a*theta
-#     indexes_array = []
-#     middle = resolution / 2
-#     for i in range(samples):
-#         t = i / (samples / 10) * np.pi
-#         x = (1 + 5 * t) * np.cos(density * t)
-#         y = (1 + 5 * t) * np.sin(density * t)
-#         indexes_array += [[x - middle, y - middle]]
-#     return np.round(np.array(indexes_array)).astype(int) + resolution // 2
 
 def random_dots(resolution, number_of_samples):
     return np.random.randint(0, resolution - 1, (number_of_samples, 2)) - resolution // 2

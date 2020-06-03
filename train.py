@@ -48,7 +48,17 @@ def main():
 
     start_epoch = 0
     # Define optimizer:
-    optimizer = optim.Adam(model.parameters(), args.lr)
+    if torch.cuda.device_count() > 1:
+        sub_parameters = model.module.sub_sampling_layer.parameters()
+        recon_parameters = model.module.reconstruction_model.parameters()
+    else:
+        sub_parameters = model.sub_sampling_layer.parameters()
+        recon_parameters = model.reconstruction_model.parameters()
+
+    optimizer = optim.Adam(
+        [{'params': sub_parameters, 'lr': args.sub_lr},
+         {'params': recon_parameters}]
+        , args.lr)
     # Check if to resume or new train
     if args.resume is True:
         checkpoint = torch.load(pathlib.Path('outputs/' + args.checkpoint + '/model.pt'))
@@ -63,7 +73,7 @@ def main():
         # Load model
         model.load_state_dict(checkpoint['model'])
         # Load optimizer
-        # optimizer.load_state_dict(checkpoint['optimizer'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
         # Set epoch number
         start_epoch = checkpoint['epoch'] + 1
     # Train
@@ -109,12 +119,12 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
 
         # Print training progress and save model
         status_printing = \
-            'Epoch Number: ' + str(epoch_number) + '\n' \
+            'Epoch Number: ' + str(epoch_number+1) + '\n' \
             + 'Running_loss(' + str(args.loss_fn) + ') = ' + str(running_loss) + '\n' \
             + 'Epoch time: ' + str(time.time() - running_time)
         over_all_running_time += (time.time() - running_time)
-        save_model(args, epoch_number, model, optimizer)
-        visualize(args, epoch_number, model, display_data, writer)
+        save_model(args, epoch_number+1, model, optimizer)
+        visualize(args, epoch_number+1, model, display_data, writer)
         print(status_printing)
 
     # Print train statistics
