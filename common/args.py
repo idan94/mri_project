@@ -54,6 +54,11 @@ class Args(argparse.ArgumentParser):
         self.add_argument('--penalty_weight', type=float, default=1e-1,
                           help='the weight that will be given to the penalty over'
                                ' the speed and accelaretion of the trajectory')
+        self.add_argument('--penalty_increment', type=float, default=10,
+                          help='the number that the weight of the penalty will be multiplied with')
+        self.add_argument('--penalty_increment_iteration_number', type=float, default=10,
+                          help='how many iterations it will take to increase the penalty')
+
 
         # Unet(reconstruction) parameters
         self.add_argument('--unet-chans', type=int, default=16,
