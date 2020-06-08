@@ -59,3 +59,9 @@ class subsampeling_model_for_reconstruction_from_k_space(nn.Module):
 
     def get_trajectory(self):
         return self.sub_sampling_layer.trajectory
+
+    def get_reconstructed_k_space(self,input_data):
+        image_from_sub_sampling = self.sub_sampling_layer(input_data)
+        k_space = fft2(image_from_sub_sampling)
+        output = self.reconstruction_model.K_space_reconstruction(k_space.squeeze(1).permute(0,3,1,2))
+        return output

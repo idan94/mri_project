@@ -13,6 +13,7 @@ from dataTransform import DataTransform
 from model import SubSamplingModel
 from trajectory_initiations import to_trajectory_image
 from k_space_reconstruction_model import subsampeling_model_for_reconstruction_from_k_space
+import matplotlib.pyplot as plt
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -40,7 +41,7 @@ def main(model_class):
         unet_chans=args.unet_chans,
         unet_num_pool_layers=args.unet_num_pool_layers,
         unet_drop_prob=args.unet_drop_prob,
-        number_of_conv_layers= 2
+        number_of_conv_layers=2
     )
     # # Multiple GPUs:
     if torch.cuda.device_count() > 1:
@@ -81,11 +82,13 @@ def main(model_class):
     # Train
     train_model(model, optimizer, train_data_loader, display_data_loader, args, writer, start_epoch)
 
-def penalty(model,args):
+
+def penalty(model, args):
     trajectory = model.get_trajectory()
-    derivative = trajectory[:-1,:] - trajectory[1:,:]
-    second_derivative = derivative[:-1,:] - derivative[1:,:]
-    return args.penalty_weight*(torch.norm(derivative,2) + torch.norm(second_derivative,2))
+    derivative = trajectory[:-1, :] - trajectory[1:, :]
+    second_derivative = derivative[:-1, :] - derivative[1:, :]
+    return args.penalty_weight * (torch.norm(derivative, 2) + torch.norm(second_derivative, 2))
+
 
 def train_model(model, optimizer, train_data, display_data, args, writer, start_epoch):
     print('~~~Starting Training~~~')
@@ -96,7 +99,7 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
     for epoch_number in range(start_epoch, start_epoch + args.num_epochs):
         running_time = time.time()
         running_loss = 0
-        if epoch_number % args.penalty_increment_iteration_number == args.penalty_increment_iteration_number -1:
+        if epoch_number % args.penalty_increment_iteration_number == args.penalty_increment_iteration_number - 1:
             args.penalty_weight *= args.penalty_increment
         for i, data in enumerate(train_data):
             k_space, target, f_name, slice = data
@@ -113,7 +116,7 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
             output = output.to(device)
             # Calculate loss
             if torch.cuda.device_count() > 1:
-                loss = loss_fn(output, target.unsqueeze(1)) + penalty(model.module,args)
+                loss = loss_fn(output, target.unsqueeze(1)) + penalty(model.module, args)
             else:
                 loss = loss_fn(output, target.unsqueeze(1)) + penalty(model, args)
             loss.backward()
@@ -123,12 +126,12 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
 
         # Print training progress and save model
         status_printing = \
-            'Epoch Number: ' + str(epoch_number+1) + '\n' \
+            'Epoch Number: ' + str(epoch_number + 1) + '\n' \
             + 'Running_loss(' + str(args.loss_fn) + ') = ' + str(running_loss) + '\n' \
             + 'Epoch time: ' + str(time.time() - running_time)
         over_all_running_time += (time.time() - running_time)
-        save_model(args, epoch_number+1, model, optimizer)
-        visualize(args, epoch_number+1, model, display_data, writer)
+        save_model(args, epoch_number + 1, model, optimizer)
+        visualize(args, epoch_number + 1, model, display_data, writer)
         print(status_printing)
 
     # Print train statistics
@@ -216,6 +219,16 @@ def visualize(args, epoch, model, data_loader, writer):
                 save_image(trajectory_image, 'Trajectory')
                 save_image(output, 'Reconstruction')
                 corrupted = torch.sqrt(corrupted[..., 0] ** 2 + corrupted[..., 1] ** 2)
+                
+                # try to see the reconstructed_k_space
+                try:
+                    reconstructed_k_space = model.get_reconstructed_k_space(k_space.clone())
+                    reconstructed_k_space = torch.log(torch.sqrt(reconstructed_k_space[:,0]**2 + reconstructed_k_space[:,1]**2).unsqueeze(1) + 10e-10)
+                    save_image(reconstructed_k_space, 'reconstructed_k_space')
+                except:
+                    # if the function is doesnt exist in the model then do nothing
+                    pass
+
                 save_image(corrupted, 'Corrupted')
                 save_image(torch.abs(target - output), 'Error')
             break
