@@ -12,11 +12,12 @@ from data.mri_data import SliceData
 from dataTransform import DataTransform
 from model import SubSamplingModel
 from trajectory_initiations import to_trajectory_image
+from k_space_reconstruction_model import subsampeling_model_for_reconstruction_from_k_space
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-def main():
+def main(model_class):
     # Args stuff:
     args = Args().parse_args()
     args.output_dir = 'outputs/' + args.output_dir
@@ -30,7 +31,7 @@ def main():
     train_data_loader, val_data_loader, display_data_loader = load_data(args)
 
     # Define model:
-    model = SubSamplingModel(
+    model = model_class(
         decimation_rate=args.decimation_rate,
         resolution=args.resolution,
         trajectory_learning=True,
@@ -38,7 +39,8 @@ def main():
         spiral_density=args.spiral_density,
         unet_chans=args.unet_chans,
         unet_num_pool_layers=args.unet_num_pool_layers,
-        unet_drop_prob=args.unet_drop_prob
+        unet_drop_prob=args.unet_drop_prob,
+        number_of_conv_layers= 2
     )
     # # Multiple GPUs:
     if torch.cuda.device_count() > 1:
@@ -231,4 +233,5 @@ def get_loss_fn(args):
 
 
 if __name__ == '__main__':
-    main()
+    model_class = subsampeling_model_for_reconstruction_from_k_space
+    main(model_class)
