@@ -19,11 +19,13 @@ class k_space_reconstruction(nn.Module):
         channels = 2
         # the amount of input cahnnels is 2 becuase of the ifft result
         for _ in range(number_of_conv_layers // 2):
-            conv_layers.append(nn.Conv2d(in_channels=channels, out_channels=channels * 2, kernel_size=3, bias=False))
+            conv_layers.append(
+                nn.Conv2d(in_channels=channels, out_channels=channels * 2, kernel_size=3, bias=False, padding=1))
             conv_layers.append(nn.ReLU())
             channels *= 2
         for _ in range(number_of_conv_layers // 2, number_of_conv_layers):
-            conv_layers.append(nn.Conv2d(in_channels=channels, out_channels=channels // 2, kernel_size=3, bias=False))
+            conv_layers.append(
+                nn.Conv2d(in_channels=channels, out_channels=channels // 2, kernel_size=3, bias=False, padding=1))
             conv_layers.append(nn.ReLU())
             channels //= 2
         self.K_space_reconstruction = nn.Sequential(*conv_layers)
@@ -32,9 +34,9 @@ class k_space_reconstruction(nn.Module):
 
     def forward(self, input_image):
         k_space = fft2(input_image)
-        reconstructed_k_space = self.K_space_reconstruction(k_space)
-        image = ifft2(reconstructed_k_space)
-        reconstructed_image = self.Unet_model(image)
+        reconstructed_k_space = self.K_space_reconstruction(k_space.permute(0, 3, 1, 2))
+        image = ifft2(reconstructed_k_space.permute(0, 2, 3, 1))
+        reconstructed_image = self.Unet_model(image.permute(0, 3, 1, 2))
         return reconstructed_image
 
 
@@ -52,5 +54,8 @@ class subsampeling_model_for_reconstruction_from_k_space(nn.Module):
 
     def forward(self, input_data):
         image_from_sub_sampling = self.sub_sampling_layer(input_data)
-        output = self.reconstruction_model(image_from_sub_sampling.squeeze(1).permute(0, 3, 1, 2))
+        output = self.reconstruction_model(image_from_sub_sampling.squeeze(1))
         return output
+
+    def get_trajectory(self):
+        return self.sub_sampling_layer.trajectory
