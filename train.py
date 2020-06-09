@@ -127,7 +127,8 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
         status_printing = \
             'Epoch Number: ' + str(epoch_number + 1) + '\n' \
             + 'Running_loss(' + str(args.loss_fn) + ') = ' + str(running_loss) + '\n' \
-            + 'Epoch time: ' + str(time.time() - running_time)
+            + 'Epoch time: ' + str(time.time() - running_time) \
+            + 'Penalty Weight' + str(args.penalty_weight)
         over_all_running_time += (time.time() - running_time)
         save_model(args, epoch_number + 1, model, optimizer)
         visualize(args, epoch_number + 1, model, display_data, writer)
@@ -218,7 +219,7 @@ def visualize(args, epoch, model, data_loader, writer):
                 save_image(trajectory_image, 'Trajectory')
                 save_image(output, 'Reconstruction')
                 corrupted = torch.sqrt(corrupted[..., 0] ** 2 + corrupted[..., 1] ** 2)
-                
+
                 reconstructed_k_space = model.get_reconstructed_k_space(k_space.clone())
                 reconstructed_k_space = torch.log(torch.sqrt(reconstructed_k_space[:,0]**2 + reconstructed_k_space[:,1]**2).unsqueeze(1) + 10e-10)
                 save_image(reconstructed_k_space, 'reconstructed_k_space')
