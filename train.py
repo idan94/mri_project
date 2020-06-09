@@ -219,14 +219,10 @@ def visualize(args, epoch, model, data_loader, writer):
                 save_image(output, 'Reconstruction')
                 corrupted = torch.sqrt(corrupted[..., 0] ** 2 + corrupted[..., 1] ** 2)
                 
-                # try to see the reconstructed_k_space
-                try:
-                    reconstructed_k_space = model.get_reconstructed_k_space(k_space.clone())
-                    reconstructed_k_space = torch.log(torch.sqrt(reconstructed_k_space[:,0]**2 + reconstructed_k_space[:,1]**2).unsqueeze(1) + 10e-10)
-                    save_image(reconstructed_k_space, 'reconstructed_k_space')
-                except:
-                    # if the function is doesnt exist in the model then do nothing
-                    pass
+                reconstructed_k_space = model.get_reconstructed_k_space(k_space.clone())
+                reconstructed_k_space = torch.log(torch.sqrt(reconstructed_k_space[:,0]**2 + reconstructed_k_space[:,1]**2).unsqueeze(1) + 10e-10)
+                save_image(reconstructed_k_space, 'reconstructed_k_space')
+
 
                 save_image(corrupted, 'Corrupted')
                 save_image(torch.abs(target - output), 'Error')
