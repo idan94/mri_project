@@ -51,10 +51,10 @@ class Args(argparse.ArgumentParser):
         self.add_argument('--weight-decay', type=float, default=0.,
                           help='Strength of weight decay regularization')
         self.add_argument('--sub-lr', type=float, default=0.03, help='learning rate of the sub-sampling layer')
-        self.add_argument('--penalty_weight', type=float, default=1e-1,
+        self.add_argument('--penalty_weight', type=float, default=1e-2,
                           help='the weight that will be given to the penalty over'
                                ' the speed and accelaretion of the trajectory')
-        self.add_argument('--penalty_increment', type=float, default=10,
+        self.add_argument('--penalty_increment', type=float, default=5,
                           help='the number that the weight of the penalty will be multiplied with')
         self.add_argument('--penalty_increment_iteration_number', type=float, default=10,
                           help='how many iterations it will take to increase the penalty')
