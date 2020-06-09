@@ -6,7 +6,8 @@ import torch.optim as optim
 import torchvision
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
-
+from math import log10, sqrt
+from SSIM import ssim
 from common.args import Args
 from data.mri_data import SliceData
 from dataTransform import DataTransform
@@ -141,8 +142,6 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
         over_all_running_time += (time.time() - running_time)
         save_model(args, epoch_number, model, optimizer)
         visualize(args, epoch_number, model, display_data, writer)
-        writer.add_scalar('loss_fn_loss', loss_fn_loss, epoch_number)
-        writer.add_scalar('penalty_loss', penalty_loss, epoch_number)
         print(status_printing)
 
     # Print train statistics
@@ -208,26 +207,24 @@ def save_image(image, tag, epoch, writer):
     image -= image.min()
     image /= image.max()
     grid = torchvision.utils.make_grid(image, nrow=4, pad_value=1)
-    if epoch == -1:
-        writer.add_image(tag, grid, 0)
-    else:
-        writer.add_image(tag, grid, epoch)
+    writer.add_image(tag, grid, epoch)
 
 
-def save_trajectory_image(args, model, epoch, writer):
+def save_trajectory_image(tag, args, model, epoch, writer):
     trajectory = model.sub_sampling_layer.trajectory
     trajectory_image = torch.tensor(to_trajectory_image(args.resolution, trajectory.cpu().detach().numpy()))
     if epoch == -1:
         tag = 'Init_Trajectory'
     else:
         tag = 'Trajectory'
-    save_image(trajectory_image, tag, 0, writer)
+    save_image(trajectory_image, tag, epoch, writer)
 
 
 # epoch = -1 for init visualization
 def visualize(args, epoch, model, data_loader, writer):
     model.eval()
     with torch.no_grad():
+        number_of_images, l1_loss, mse_loss, psnr_loss, ssim_loss = (0, 0, 0, 0, 0)
         for i, data in enumerate(data_loader):
             k_space, target, f_name, slice = data
             k_space = k_space.unsqueeze(1).to(device)
@@ -237,11 +234,15 @@ def visualize(args, epoch, model, data_loader, writer):
                 model = model.module
 
             if epoch == -1:  # Initialization data: Target and init trajectory
-                save_image(target, 'Target', epoch, writer)
-                save_trajectory_image(args, model, epoch, writer)
+                save_image(target, 'Target', 0, writer)
+                trajectory = model.sub_sampling_layer.trajectory
+                trajectory_image = torch.tensor(to_trajectory_image(args.resolution, trajectory.cpu().detach().numpy()))
+                save_image(trajectory_image, 'Init_Trajectory', 0, writer)
             else:
                 # Trajectory:
-                save_trajectory_image(args, model, epoch, writer)
+                trajectory = model.sub_sampling_layer.trajectory
+                trajectory_image = torch.tensor(to_trajectory_image(args.resolution, trajectory.cpu().detach().numpy()))
+                save_image(trajectory_image, 'Trajectory', epoch, writer)
 
                 # Corrupted Image- image from ifft(subSampled(kspace)):
                 corrupted = model.sub_sampling_layer(k_space)
@@ -254,6 +255,17 @@ def visualize(args, epoch, model, data_loader, writer):
 
                 # Error. Normal L1 visualization(pixel by pixel subtraction):
                 save_image(torch.abs(target - output), 'Error', epoch, writer)
+                # L1:
+                loss = nn.L1Loss()
+                l1_loss += loss(target, output)
+                # MSE:
+                loss = nn.MSELoss()
+                mse_loss += loss(target, output)
+                # PSNR:
+                psnr_loss += calc_psnr(mse_loss)
+                # SSIM:
+                ssim_loss += ssim(target, output)
+                number_of_images += 1
 
                 # Reconstructed K-space. **Relevant only for KSpaceReconstruction model**:
                 if model_class == SubSamplingModelReconFromKSpace:
@@ -263,6 +275,19 @@ def visualize(args, epoch, model, data_loader, writer):
                                    reconstructed_k_space[:, 1] ** 2).unsqueeze(1) + 10e-10)
                     save_image(reconstructed_k_space, 'reconstructed_k_space', epoch, writer)
             break
+        if number_of_images > 0:
+            writer.add_scalar('Loss/L1', l1_loss / number_of_images, epoch)
+            writer.add_scalar('Loss/MSE', mse_loss / number_of_images, epoch)
+            writer.add_scalar('Loss/PSNR', psnr_loss / number_of_images, epoch)
+            writer.add_scalar('Loss/SSIM', ssim_loss / number_of_images, epoch)
+
+
+def calc_psnr(mse):
+    if (mse == 0):  # MSE is zero means no noise is present in the signal .
+        # Therefore PSNR have no importance.
+        return -1
+    max_pixel = 255.0  # TODO: check this max pixel value
+    return 20 * log10(max_pixel / sqrt(mse))
 
 
 def get_loss_fn(args):
