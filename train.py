@@ -78,6 +78,8 @@ def main(model_class):
         optimizer.load_state_dict(checkpoint['optimizer'])
         # Set epoch number
         start_epoch = checkpoint['epoch'] + 1
+        # Set the penalty
+        args.penalty_weight = old_args.penalty_weight
     # Train
     train_model(model, optimizer, train_data_loader, display_data_loader, args, writer, start_epoch)
 
