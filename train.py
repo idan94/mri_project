@@ -127,7 +127,7 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
         status_printing = \
             'Epoch Number: ' + str(epoch_number + 1) + '\n' \
             + 'Running_loss(' + str(args.loss_fn) + ') = ' + str(running_loss) + '\n' \
-            + 'Epoch time: ' + str(time.time() - running_time) \
+            + 'Epoch time: ' + str(time.time() - running_time) + '\n' \
             + 'Penalty Weight' + str(args.penalty_weight)
         over_all_running_time += (time.time() - running_time)
         save_model(args, epoch_number + 1, model, optimizer)
