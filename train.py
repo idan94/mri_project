@@ -14,9 +14,11 @@ from model import SubSamplingModel
 from trajectory_initiations import to_trajectory_image
 from k_space_reconstruction_model import subsampeling_model_for_reconstruction_from_k_space
 import matplotlib.pyplot as plt
+import os
+os.environ["OMP_NUM_THREADS"] = "4"
+os.environ["OPENBLAS_NUM_THREADS"] = "4" 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
 
 def main(model_class):
     # Args stuff:
