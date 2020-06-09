@@ -11,13 +11,13 @@ from trajectory_initiations import *
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-class k_space_reconstruction(nn.Module):
+class KSpaceReconstruction(nn.Module):
     def __init__(self, number_of_conv_layers, unet_chans,
                  unet_num_pool_layers, unet_drop_prob):
         super().__init__()
         conv_layers = []
         channels = 2
-        # the amount of input cahnnels is 2 becuase of the ifft result
+        # The amount of input channels is 2 because of the ifft result
         for _ in range(number_of_conv_layers // 2):
             conv_layers.append(
                 nn.Conv2d(in_channels=channels, out_channels=channels * 2, kernel_size=3, bias=False, padding=1))
@@ -40,17 +40,17 @@ class k_space_reconstruction(nn.Module):
         return reconstructed_image
 
 
-class subsampeling_model_for_reconstruction_from_k_space(nn.Module):
+class SubSamplingModelReconFromKSpace(nn.Module):
     def __init__(self, decimation_rate, resolution, trajectory_learning,
                  subsampling_trajectory, spiral_density, unet_chans,
                  unet_num_pool_layers, unet_drop_prob, number_of_conv_layers):
         super().__init__()
         self.sub_sampling_layer = SubSamplingLayer(decimation_rate, resolution, trajectory_learning,
                                                    subsampling_trajectory, spiral_density)
-        self.reconstruction_model = k_space_reconstruction(number_of_conv_layers=number_of_conv_layers,
-                                                           unet_chans=unet_chans,
-                                                           unet_num_pool_layers=unet_num_pool_layers,
-                                                           unet_drop_prob=unet_drop_prob)
+        self.reconstruction_model = KSpaceReconstruction(number_of_conv_layers=number_of_conv_layers,
+                                                         unet_chans=unet_chans,
+                                                         unet_num_pool_layers=unet_num_pool_layers,
+                                                         unet_drop_prob=unet_drop_prob)
 
     def forward(self, input_data):
         image_from_sub_sampling = self.sub_sampling_layer(input_data)

@@ -12,10 +12,11 @@ from data.mri_data import SliceData
 from dataTransform import DataTransform
 from model import SubSamplingModel
 from trajectory_initiations import to_trajectory_image
-from k_space_reconstruction_model import subsampeling_model_for_reconstruction_from_k_space
+from k_space_reconstruction_model import SubSamplingModelReconFromKSpace
 import matplotlib.pyplot as plt
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 
 def main(model_class):
     # Args stuff:
@@ -48,7 +49,7 @@ def main(model_class):
         model = nn.DataParallel(model)
     model = model.to(device)
 
-    start_epoch = 0
+    start_epoch = 1
     # Define optimizer:
     if torch.cuda.device_count() > 1:
         sub_parameters = model.module.sub_sampling_layer.parameters()
@@ -97,6 +98,8 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
     over_all_running_time = 0
     loss_fn = get_loss_fn(args)
     print("train_data len is: " + str(len(train_data)))
+    if args.resume is False:
+        visualize(args, -1, model, display_data, writer)
     for epoch_number in range(start_epoch, start_epoch + args.num_epochs):
         running_time = time.time()
         running_loss = 0
@@ -117,9 +120,13 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
             output = output.to(device)
             # Calculate loss
             if torch.cuda.device_count() > 1:
-                loss = loss_fn(output, target.unsqueeze(1)) + penalty(model.module, args)
+                loss_fn_loss = loss_fn(output, target.unsqueeze(1))
+                penalty_loss = penalty(model.module, args)
+                loss = loss_fn_loss + penalty_loss
             else:
-                loss = loss_fn(output, target.unsqueeze(1)) + penalty(model, args)
+                loss_fn_loss = loss_fn(output, target.unsqueeze(1))
+                penalty_loss = penalty(model, args)
+                loss = loss_fn_loss + penalty_loss
             loss.backward()
             # Make a step(update model parameters)
             optimizer.step()
@@ -127,13 +134,15 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
 
         # Print training progress and save model
         status_printing = \
-            'Epoch Number: ' + str(epoch_number + 1) + '\n' \
+            'Epoch Number: ' + str(epoch_number) + '\n' \
             + 'Running_loss(' + str(args.loss_fn) + ') = ' + str(running_loss) + '\n' \
             + 'Epoch time: ' + str(time.time() - running_time) + '\n' \
-            + 'Penalty Weight' + str(args.penalty_weight)
+            + 'Penalty Weight: ' + str(args.penalty_weight)
         over_all_running_time += (time.time() - running_time)
-        save_model(args, epoch_number + 1, model, optimizer)
-        visualize(args, epoch_number + 1, model, display_data, writer)
+        save_model(args, epoch_number, model, optimizer)
+        visualize(args, epoch_number, model, display_data, writer)
+        writer.add_scalar('loss_fn_loss', loss_fn_loss, epoch_number)
+        writer.add_scalar('penalty_loss', penalty_loss, epoch_number)
         print(status_printing)
 
     # Print train statistics
@@ -195,40 +204,64 @@ def load_data(args):
     return train_data_loader, val_data_loader, display_data_loader
 
 
-def visualize(args, epoch, model, data_loader, writer):
-    def save_image(image, tag):
-        image -= image.min()
-        image /= image.max()
-        grid = torchvision.utils.make_grid(image, nrow=4, pad_value=1)
+def save_image(image, tag, epoch, writer):
+    image -= image.min()
+    image /= image.max()
+    grid = torchvision.utils.make_grid(image, nrow=4, pad_value=1)
+    if epoch == -1:
+        writer.add_image(tag, grid, 0)
+    else:
         writer.add_image(tag, grid, epoch)
 
+
+def save_trajectory_image(args, model, epoch, writer):
+    trajectory = model.sub_sampling_layer.trajectory
+    trajectory_image = torch.tensor(to_trajectory_image(args.resolution, trajectory.cpu().detach().numpy()))
+    if epoch == -1:
+        tag = 'Init_Trajectory'
+    else:
+        tag = 'Trajectory'
+    save_image(trajectory_image, tag, 0, writer)
+
+
+# epoch = -1 for init visualization
+def visualize(args, epoch, model, data_loader, writer):
     model.eval()
     with torch.no_grad():
         for i, data in enumerate(data_loader):
             k_space, target, f_name, slice = data
             k_space = k_space.unsqueeze(1).to(device)
             target = target.unsqueeze(1).to(device)
-            save_image(target, 'Target')
-            if epoch != 0:
-                output = model(k_space.clone())
-                if torch.cuda.device_count() > 1:
-                    corrupted = model.module.sub_sampling_layer(k_space)
-                    trajectory = model.module.sub_sampling_layer.trajectory
-                else:
-                    corrupted = model.sub_sampling_layer(k_space)
-                    trajectory = model.sub_sampling_layer.trajectory
-                trajectory_image = torch.tensor(to_trajectory_image(args.resolution, trajectory.cpu().detach().numpy()))
-                save_image(trajectory_image, 'Trajectory')
-                save_image(output, 'Reconstruction')
+
+            if torch.cuda.device_count() > 1:
+                model = model.module
+
+            if epoch == -1:  # Initialization data: Target and init trajectory
+                save_image(target, 'Target', epoch, writer)
+                save_trajectory_image(args, model, epoch, writer)
+            else:
+                # Trajectory:
+                save_trajectory_image(args, model, epoch, writer)
+
+                # Corrupted Image- image from ifft(subSampled(kspace)):
+                corrupted = model.sub_sampling_layer(k_space)
                 corrupted = torch.sqrt(corrupted[..., 0] ** 2 + corrupted[..., 1] ** 2)
+                save_image(corrupted, 'Corrupted', epoch, writer)
 
-                reconstructed_k_space = model.get_reconstructed_k_space(k_space.clone())
-                reconstructed_k_space = torch.log(torch.sqrt(reconstructed_k_space[:,0]**2 + reconstructed_k_space[:,1]**2).unsqueeze(1) + 10e-10)
-                save_image(reconstructed_k_space, 'reconstructed_k_space')
+                # Reconstructed Image from our model:
+                output = model(k_space.clone())
+                save_image(output, 'Reconstruction', epoch, writer)
 
+                # Error. Normal L1 visualization(pixel by pixel subtraction):
+                save_image(torch.abs(target - output), 'Error', epoch, writer)
 
-                save_image(corrupted, 'Corrupted')
-                save_image(torch.abs(target - output), 'Error')
+                # Reconstructed K-space. **Relevant only for KSpaceReconstruction model**:
+                if model_class == SubSamplingModelReconFromKSpace:
+                    reconstructed_k_space = model.get_reconstructed_k_space(k_space.clone())
+                    reconstructed_k_space = torch.log(
+                        torch.sqrt(reconstructed_k_space[:, 0] ** 2 +
+                                   reconstructed_k_space[:, 1] ** 2).unsqueeze(1) + 10e-10)
+                    save_image(reconstructed_k_space, 'reconstructed_k_space', epoch, writer)
             break
 
 
@@ -244,5 +277,5 @@ def get_loss_fn(args):
 
 
 if __name__ == '__main__':
-    model_class = subsampeling_model_for_reconstruction_from_k_space
+    model_class = SubSamplingModelReconFromKSpace
     main(model_class)

@@ -79,7 +79,7 @@ class Args(argparse.ArgumentParser):
 
         # Output
         self.add_argument('--output-dir', default='last_test', type=str, help='Path to outputs')
-        self.add_argument('--display-images', default=5, type=int,
+        self.add_argument('--display-images', default=8, type=int,
                           help='Number of images(target+output) to display when test method is called')
 
         # Override defaults with passed overrides
