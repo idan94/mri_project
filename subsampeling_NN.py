@@ -121,8 +121,8 @@ class subsampeling_NN(nn.Module):
         for i in range(len(maximals)):
             index = maximals[i].detach().item()
             masks[i,index] = output[i,index]
+        masks = masks.reshape(shape)
         return masks
-
 
 
 def main():
