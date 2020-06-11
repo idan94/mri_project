@@ -28,7 +28,10 @@ class KSpaceReconstruction(nn.Module):
                 nn.Conv2d(in_channels=channels, out_channels=channels // 2, kernel_size=3, bias=False, padding=1))
             conv_layers.append(nn.ReLU())
             channels //= 2
-        self.K_space_reconstruction = nn.Sequential(*conv_layers)
+        # self.K_space_reconstruction = nn.Sequential(*conv_layers)
+        self.K_space_reconstruction =  UnetModel(in_chans=2, out_chans=2, chans=3,
+                                    num_pool_layers=6, drop_prob=unet_drop_prob)
+
         self.Unet_model = UnetModel(in_chans=2, out_chans=1, chans=unet_chans,
                                     num_pool_layers=unet_num_pool_layers, drop_prob=unet_drop_prob)
 
