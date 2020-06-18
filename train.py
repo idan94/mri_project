@@ -101,11 +101,21 @@ def train_model(model, optimizer, train_data, display_data, args, writer, start_
     print("train_data len is: " + str(len(train_data)))
     if args.resume is False:
         visualize(args, -1, model, display_data, writer)
+
+    # this will count the amount of epochs that are with penalty increment
+    penalty_increment_counter = 0
+
     for epoch_number in range(start_epoch, start_epoch + args.num_epochs):
         running_time = time.time()
         running_loss = 0
-        if epoch_number % args.penalty_increment_iteration_number == args.penalty_increment_iteration_number - 1:
-            args.penalty_weight *= args.penalty_increment
+        # start counting iterations with penalty increment
+        if epoch_number > args.increase_penalty_from_epoch:
+            # if it has been enough iterations, increase the penalty
+            if penalty_increment_counter % args.penalty_increment_iteration_number == 0:
+                args.penalty_weight *= args.penalty_increment
+            # this is after the check if equal to 0, for first iteration
+            penalty_increment_counter += 1
+
         for i, data in enumerate(train_data):
             k_space, target, f_name, slice = data
             # Add channel dimension:
