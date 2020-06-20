@@ -51,15 +51,14 @@ class Args(argparse.ArgumentParser):
         self.add_argument('--weight-decay', type=float, default=0.,
                           help='Strength of weight decay regularization')
         self.add_argument('--sub-lr', type=float, default=0.03, help='learning rate of the sub-sampling layer')
-        self.add_argument('--penalty_weight', type=float, default=1e-4,
+        self.add_argument('--penalty_weight', type=float, default=1e-1,
                           help='the weight that will be given to the penalty over'
                                ' the speed and accelaretion of the trajectory')
-        self.add_argument('--increase_penalty_from_epoch', type=int, default=0,
-                           help='from which epoch to start increasing the penalty')
-        self.add_argument('--penalty_increment', type=float, default=5,
+        self.add_argument('--penalty_increment', type=float, default=10,
                           help='the number that the weight of the penalty will be multiplied with')
         self.add_argument('--penalty_increment_iteration_number', type=float, default=10,
                           help='how many iterations it will take to increase the penalty')
+
 
         # Unet(reconstruction) parameters
         self.add_argument('--unet-chans', type=int, default=16,
@@ -74,14 +73,13 @@ class Args(argparse.ArgumentParser):
 
         self.add_argument('--spiral-density', type=float, default=4,
                           help='The density of the initiation for spiral trajectory')
-        self.add_argument('--subsampling-init', choices=['full', 'rows', 'cols', 'spiral', 'circle', 'rand_dots'],
-                          default='full',
+        self.add_argument('--subsampling-init', choices=['full', 'rows', 'cols', 'spiral', 'circle', 'rand_dots'], default='full',
                           type=str,
                           help='From which subsampling mask to start')
 
         # Output
         self.add_argument('--output-dir', default='last_test', type=str, help='Path to outputs')
-        self.add_argument('--display-images', default=8, type=int,
+        self.add_argument('--display-images', default=5, type=int,
                           help='Number of images(target+output) to display when test method is called')
 
         # Override defaults with passed overrides

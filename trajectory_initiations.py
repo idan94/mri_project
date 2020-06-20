@@ -78,7 +78,7 @@ def to_trajectory_image(resolution, indexes_array):
     # because we use by reference addressing
     indexes_array = indexes_array + resolution // 2
     # make sure the indexes are legal, to prevent overflow
-    indexes_array = np.clip(indexes_array, 0, resolution - 1)
+    indexes_array = np.clip(indexes_array,0,resolution-1)
     indexes_array = np.clip(indexes_array, 0, resolution - 1)
     indexes_array = np.round(indexes_array).astype(int)
     image = np.zeros((resolution, resolution))
