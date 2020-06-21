@@ -72,16 +72,19 @@ def load_data(args):
 def create_batches(data, number_of_batches, batch_size):
     batches = []
     for _ in range(number_of_batches):
-        indexes = np.random.randint(low=0, high=len(data) - 2, size=batch_size)
+        indexes = np.random.randint(low=0, high=len(data) - 1, size=batch_size)
         # each batch will contain the full k-space sampling
 
-        batch = [[data[-1]] + data[indexes] for _ in range(number_of_batches)]
-        batches += [[sample[0] for sample in batch], [sample[1] for sample in batch]]
-    batches = [torch.tensor([batches[i][0] for i in range(len(batches))]),
-               torch.tensor([batches[i][1] for i in range(len(batches))])]
+        batch = [torch.cat([data[0][-1]] + [data[0][indexes[i]] for i in range(batch_size)],dim=0),
+                 torch.cat([data[1][-1]] + [data[1][indexes[i]] for i in range(batch_size)],dim=0)]
+
+        batches.append(batch)
+
     return batches
 
 
+# TODO: send log of k-space to sampler and adversarial to refrence from, beacuse the values of the k-space are too low
+# TODO: add the k-space to the input of the adversarial DNN
 def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, adversarial_optimizer,
                       over_all_optimizer):
     # TODO: this could be very fast if we use very big batch size of the data loader
@@ -89,24 +92,32 @@ def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, 
     # because the entire batch is processed simultaneously
     for k_space, target, f_name, slice in data:
         # TODO: fix batches
-        sampling_steps = [[],[]]
+        fixed_k_sapce = torch.sqrt(k_space[:, :, :, 0] ** 2 + k_space[:, :, :, 1] ** 2)
+        sampling_steps = [[], []]
         batch_size, channels, length, hight, = k_space.permute(0, 3, 1, 2).shape
-        sampled_k_space = torch.zeros(batch_size, length, hight, 2)
+        sampled_k_space = torch.zeros(batch_size, length, hight, 2,requires_grad=False)
+        sampled_k_space.permute(1, 2, 0, 3)[length // 2][hight // 2][:][:] = 1
+        # sample the first pixel in the middle
+        sampled_k_space = sampled_k_space * k_space
         # create the sampling steps
         for _ in range(sampler.number_of_samples):
-            temp_sampling_mask = sampler(k_space)
-            sample = [sampled_k_space]
+            with torch.no_grad():
+                temp_sampling_mask = sampler(sampled_k_space)
+            sampling_steps[0].append(sampled_k_space)
             # add the sample from the K-space
             sampled_k_space = sampled_k_space + temp_sampling_mask * k_space
             with torch.no_grad():
-                sample.append(adversarial(sampled_k_space))
-            sampling_steps.append(sample)
+                sampling_steps[1].append(adversarial(sampled_k_space))
         # new calculate the loss on the last sample
         # the last sample is calculating the loss function without another sampling again
         # the loss could be L2, L1, PSNR, SSIM or another metric
-        sampling_steps.append(
-            [sampled_k_space, loss_function(reconstructor(sampled_k_space.permute(0, 3, 1, 2)), target.unsqueeze(1))])
-        batches = create_batches(sampling_steps, number_of_batches=len(sampling_steps) // 10, batch_size=1)
+        sampling_steps[0].append(sampled_k_space)
+        # calc the loss on each sample
+        with torch.no_grad():
+            loss_over_last_sample = [loss_function(reconstructor(sampled_k_space.permute(0, 3, 1, 2)[0].unsqueeze(0)),
+                                                   target.unsqueeze(1)[i]).reshape(1,1) for i in range(batch_size)]
+        sampling_steps[1].append(torch.cat(loss_over_last_sample, dim=0))
+        batches = create_batches(sampling_steps, number_of_batches=len(sampling_steps) // 2, batch_size=2)
 
         for batch in batches:
             over_all_optimizer.zero_grad()
@@ -139,6 +150,7 @@ def reconstructor_epochs(sampler, data, reconstructor, loss_function, reconstruc
         for _ in range(sampler.number_of_samples):
             # to zero the grad of the adversarial network and the u_net as well
             with torch.no_grad:
+                # TODO: fix the input should be k-space
                 sampling_mask += sampler(sampling_mask)
 
         subsampled_data += [sampling_mask * k_space, target]
@@ -165,7 +177,7 @@ def train_epoch(sampler, adversarial, reconstructor, data, loss_function, recons
 
 
 def train(number_of_epochs, reconstructor_lr, sampler_lr, adversarial_lr):
-    sampler = Sampler(32, 4, 2, 0)
+    sampler = Sampler(5, 4, 2, 0)
     adversarial = Adversarial(320, 10, 4, 3)
     reconstructor = UnetModel(in_chans=2, out_chans=1, chans=32, num_pool_layers=4, drop_prob=0)
     adversarial_optimizer = torch.optim.Adam(adversarial.parameters(), lr=adversarial_lr)
@@ -181,7 +193,7 @@ def train(number_of_epochs, reconstructor_lr, sampler_lr, adversarial_lr):
     args.data_path = '../' + args.data_path
     train_data_loader, val_data_loader, display_data_loader = load_data(args)
 
-    loss_function = F.mse_loss
+    loss_function = nn.MSELoss()
 
     for _ in range(number_of_epochs):
         train_epoch(sampler, adversarial, reconstructor, train_data_loader, loss_function, reconstructor_epochs,

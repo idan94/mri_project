@@ -32,8 +32,6 @@ class Sampler(nn.Module):
         for i in range(batch_size):
             # only the maximal value is epsilon, the second max is 0 and the rest are negative
             sample_mask[i] = sample_mask[i] - maximums[i][0] + epsilons[i]
-            # now the maximal value is 1 and the rest are negative or zeros
-            sample_mask[i] = sample_mask[i] / epsilons[i]
             # now the maximal is one and the rest are 0
             sample_mask[i] = self.sqwish(sample_mask[i])
         return sample_mask.permute(0,2,3,1)
