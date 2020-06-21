@@ -27,13 +27,10 @@ class Sampler(nn.Module):
         # F.sample_mask = softmax(sample_mask, dim=3)
         # leave the only the maximal value in the sampeling mask
         batch_size = k_space.shape[0]
-        maximums = [torch.topk(sample_mask[i][...].flatten(),2)[0] for i in range(batch_size)]
-        epsilons = [maximums[i][0] - maximums[i][1] for i in range(batch_size)]
-        for i in range(batch_size):
-            # only the maximal value is epsilon, the second max is 0 and the rest are negative
-            sample_mask[i] = sample_mask[i] - maximums[i][0] + epsilons[i]
-            # now the maximal is one and the rest are 0
-            sample_mask[i] = self.sqwish(sample_mask[i])
+        maximums = [torch.topk(sample_mask[i][...].flatten(),2)[0][1] for i in range(batch_size)]
+        sample_mask = sample_mask - torch.cat(
+            [torch.topk(sample_mask[i][...].flatten(), 2)[0][1].reshape(1, 1, 1, 1) for i in range(batch_size)])
+        sample_mask = self.sqwish(sample_mask)
         return sample_mask.permute(0,2,3,1)
 
 
