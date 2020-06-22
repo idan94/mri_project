@@ -12,11 +12,10 @@ from torch.utils.data import DataLoader
 from common.args import Args
 from data.mri_data import SliceData
 from dataTransform import DataTransform
-from model import SubSamplingModel
 from trajectory_initiations import to_trajectory_image
 from models.unet.unet_model import UnetModel
-from RNN.Adversarial import Adversarial
-from RNN.Subsampeling_model import Sampler
+from Adversarial import Adversarial
+from Subsampeling_model import Sampler
 import matplotlib.pyplot as plt
 import time
 
@@ -220,7 +219,6 @@ def train(number_of_epochs, reconstructor_lr, sampler_lr, adversarial_lr):
         list(adversarial.parameters()) + list(sampler.parameters()) + list(reconstructor.parameters()))
 
     args = Args().parse_args()
-    args.data_path = '../' + args.data_path
     args.sample_rate = 0.2
     train_data_loader, val_data_loader, display_data_loader = load_data(args)
 

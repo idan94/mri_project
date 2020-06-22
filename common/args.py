@@ -32,50 +32,74 @@ class Args(argparse.ArgumentParser):
         self.add_argument('--challenge', default='singlecoil', choices=['singlecoil', 'multicoil'],
                           help='Which challenge')
         self.add_argument('--data-path', default='datasets', type=str, help='Path to the dataset directory')
-        self.add_argument('--sample-rate', type=float, default=1,
-                          help='Fraction of total volumes to include')
-        self.add_argument('--num-workers', default=8, type=int, help='Number of workers for dataLoaders')
-        self.add_argument('--seed', default=32, type=int, help='Seed for random number generators')
 
-        # Optimization parameters
-        self.add_argument('--batch-size', default=4, type=int, help='Mini batch size')
-        self.add_argument('--loss-fn', default='L1', choices=['L1', 'MSE'],
-                          help='Which loss function to use')
-        self.add_argument('--num-epochs', type=int, default=20, help='Number of training epochs')
-        self.add_argument('--lr', type=float, default=0.01, help='Learning rate')
-        # Learning rate
-        self.add_argument('--lr-step-size', type=int, default=30,
-                          help='Period of learning rate decay')
-        self.add_argument('--lr-gamma', type=float, default=0.01,
-                          help='Multiplicative factor of learning rate decay')
-        self.add_argument('--weight-decay', type=float, default=0.,
-                          help='Strength of weight decay regularization')
-        self.add_argument('--sub-lr', type=float, default=0.03, help='learning rate of the sub-sampling layer')
-        self.add_argument('--penalty_weight', type=float, default=1e-1,
-                          help='the weight that will be given to the penalty over'
-                               ' the speed and accelaretion of the trajectory')
-        self.add_argument('--penalty_increment', type=float, default=10,
-                          help='the number that the weight of the penalty will be multiplied with')
-        self.add_argument('--penalty_increment_iteration_number', type=float, default=10,
-                          help='how many iterations it will take to increase the penalty')
+        # Sampler parameters
+        self.add_argument('--sampler-sample-rate', type=float, default=0.3,
+                          help='Fraction of total volumes to include to the data set of the sampler DNN')
+        self.add_argument('--sampler-batch-size', default=4, type=int, help='Mini batch size for the sampler DNN')
+        self.add_argument('--sampler-lr', type=float, default=0.01, help='Learning rate for the sampler DNN')
+        self.add_argument('--sampler-lr-decay', type=float, default=0.5,
+                          help='the rate for decaying the lr of the sampler DNN')
+        self.add_argument('--sampler-lr-decay-every-number-of-epochs', type=int, default=25,
+                          help='the number of epochs that will pass for each decaying of the lr for the sampler DNN')
+        self.add_argument('--sampler-lr-min-value', type=float, default=0.0001,
+                          help='the min learning rate for the sampler DNN')
 
+        # Adversarial parameters
+        self.add_argument('--adversarial-sample-rate', type=float, default=0.3,
+                          help='Fraction of total volumes to include to the data set of the adversarial DNN')
+        # in the epoch of the adversarial DNN we first generate data without and gradient calculations
+        # this could be done very fast by using the GPU power, as this task is very fitting for parallelization
+        # using a big bach size will help us use the full power of the GPU
+        # consider even higher batch sizes
+        self.add_argument('--adversarial-processing-batch-size', default=400, type=int,
+                          help='Mini batch size for the adversarial DNN to generate data, using the sampler DNN')
+        self.add_argument('--adversarial-batch-size', default=16, type=int,
+                          help='Mini batch size for the adversarial DNN to train')
+        self.add_argument('--adversarial-lr', type=float, default=0.01, help='Learning rate for the adversarial DNN')
+        self.add_argument('--adversarial-lr-decay', type=float, default=0.5,
+                          help='the rate for decaying the lr of the adversarial DNN')
+        self.add_argument('--adversarial-lr-decay-every-number-of-epochs', type=int, default=25,
+                          help='the number of epochs that will pass for each decaying of the lr for the adversarial DNN')
+        self.add_argument('--adversarial-lr-min-value', type=float, default=0.0001,
+                          help='the min learning rate for the adversarial DNN')
 
-        # Unet(reconstruction) parameters
+        # Reconstructor parameters
+        self.add_argument('--reconstructor-sample-rate', type=float, default=0.5,
+                          help='Fraction of total volumes to include to the data set of the reconstructor DNN')
+        self.add_argument('--adversarial-batch-size', default=16, type=int,
+                          help='Mini batch size for the adversarial DNN')
+        self.add_argument('--reconstructor-lr', type=float, default=0.01,
+                          help='Learning rate for the reconstructor DNN')
+        self.add_argument('--reconstructor-lr-decay', type=float, default=0.5,
+                          help='the rate for decaying the lr of the reconstructor DNN')
+        self.add_argument('--reconstructor-lr-decay-every-number-of-epochs', type=int, default=25,
+                          help='the number of epochs that will pass for each decaying of the lr for the reconstructor')
+        self.add_argument('--reconstructor-lr-min-value', type=float, default=0.0001,
+                          help='the min learning rate for the reconstructor DNN')
+        self.add_argument('--reconstructor-sub-epochs', type=int, default=3,
+                          help='the amount of reconstructor epochs that will be done for each adversarial + '
+                               'sampler epochs')
         self.add_argument('--unet-chans', type=int, default=16,
                           help='Unet\'s number of output channels of the first convolution layer')
         self.add_argument('--unet-drop-prob', type=int, default=0,
                           help='Unet\'s dropout probability')
         self.add_argument('--unet-num-pool-layers', type=int, default=4,
                           help='Unet\'s number of down-sampling and up-sampling layers')
-        self.add_argument('--decimation-rate', default=12, type=int,
-                          help='Ratio of k-space points to be sampled. If multiple values are '
-                               'provided, then one of those is chosen uniformly at random for each volume.')
 
-        self.add_argument('--spiral-density', type=float, default=4,
-                          help='The density of the initiation for spiral trajectory')
-        self.add_argument('--subsampling-init', choices=['full', 'rows', 'cols', 'spiral', 'circle', 'rand_dots'], default='full',
-                          type=str,
-                          help='From which subsampling mask to start')
+        # data loading parameters
+        self.add_argument('--num-workers', default=8, type=int, help='Number of workers for dataLoaders')
+        self.add_argument('--seed', default=32, type=int, help='Seed for random number generators')
+
+        # Optimization parameters
+        self.add_argument('--loss-fn', default='L1', choices=['L1', 'MSE'],
+                          help='Which loss function to use')
+
+        self.add_argument('--num-epochs', type=int, default=20, help='Number of training epochs')
+
+        # Unet(reconstruction) parameters
+        self.add_argument('--decimation-rate', default=12, type=int,
+                          help='Ratio of k-space points to be sampled. If multiple values are ')
 
         # Output
         self.add_argument('--output-dir', default='last_test', type=str, help='Path to outputs')
