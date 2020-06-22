@@ -84,10 +84,14 @@ def create_batches(data, number_of_batches, batch_size):
     return batches
 
 
-# TODO: change the log of the k_space to be the log of each chanel instead of the log of the abs
-# TODO: when changing that need to change the formatting of the DNN and the training process
+
 def K_space_log(k_space):
-    return torch.log(torch.sqrt(k_space[:, :, :, 0] ** 2 + k_space[:, :, :, 1] ** 2)).unsqueeze(3)
+    # the log of the k_space is done on the abs of each channel of the k_space
+    # this is done to scale the range of numbers of the k_space to something  that can fit better to a DNN
+    log_of_k_space = torch.zeros_like(k_space)
+    log_of_k_space[:, :, :, 0] = torch.log(torch.abs(k_space[:, :, :, 0]))
+    log_of_k_space[:, :, :, 1] = torch.log(torch.abs(k_space[:, :, :, 1]))
+    return log_of_k_space
 
 
 def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, adversarial_optimizer,
@@ -100,7 +104,7 @@ def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, 
         k_space_log = K_space_log(k_space)
         sampling_steps = [[], []]
         batch_size, channels, length, hight, = k_space.permute(0, 3, 1, 2).shape
-        sampling_map = torch.zeros(batch_size, length, hight, 1, requires_grad=False)
+        sampling_map = torch.zeros(batch_size, length, hight, channels, requires_grad=False)
         sampling_map.permute(1, 2, 0, 3)[length // 2][hight // 2][:][:] = 1
         # sample the first pixel in the middle
         sampled_log_k_space = sampling_map * k_space_log
@@ -138,7 +142,7 @@ def sampler_epoch(sampler, adversarial, reconstructor, data, loss_function, samp
     for k_space, target, f_name, slice in data:
         k_space_log = K_space_log(k_space)
         batch_size, length, hight, channels = k_space.shape
-        sampling_mask = torch.zeros(batch_size, length, hight, 1, requires_grad=False)
+        sampling_mask = torch.zeros(batch_size, length, hight, channels, requires_grad=False)
         sampling_mask.permute(1, 2, 0, 3)[length // 2][hight // 2][:][:] = 1
         sampled_log_k_space = sampling_mask * k_space_log
         k_space.requires_grad = True
@@ -166,7 +170,7 @@ def reconstructor_epochs(sampler, data, reconstructor, loss_function, reconstruc
     for k_space, target, f_name, slice in data:
         batch_size, length, hight, channels = k_space.shape
         sampling_mask = torch.zeros(batch_size, length, hight, 1)
-        sampling_mask.permute(1,2,0,3)[length // 2][hight // 2][:][:] = 1
+        sampling_mask.permute(1, 2, 0, 3)[length // 2][hight // 2][:][:] = 1
         k_space_log = K_space_log(k_space)
         sampling_of_the_k_space_log = k_space_log * sampling_mask
         for _ in range(sampler.number_of_samples):
@@ -176,7 +180,7 @@ def reconstructor_epochs(sampler, data, reconstructor, loss_function, reconstruc
                 temp_sampling_mask = sampler(sampling_of_the_k_space_log)
                 sampling_mask = sampling_mask + temp_sampling_mask
                 sampling_of_the_k_space_log = sampling_of_the_k_space_log + temp_sampling_mask * k_space_log
-        subsampled_data[0].append(sampling_mask*k_space)
+        subsampled_data[0].append(sampling_mask * k_space)
         subsampled_data[1].append(target)
     # optimize the u-net
     for _ in range(epochs):

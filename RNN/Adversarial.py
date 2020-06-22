@@ -24,7 +24,7 @@ class Adversarial(nn.Module):
         # the reason we have 3 channels and not 4, is the k-space that
         # is being fed to the DNN has been normalized to its
         # abs value at every location, that way it has been transformed from a complex number to a real one
-        self.conv_layer = nn.Sequential(nn.Conv2d(2, chancels, 3, padding=1)
+        self.conv_layer = nn.Sequential(nn.Conv2d(4, chancels, 3, padding=1)
                                         , nn.Sequential(*conv_layers),
                                         nn.Conv2d(chancels, 1, 3, padding=1))
         # 6 and not 4 because we need to calc for the convolution without the padding and the maxpooling

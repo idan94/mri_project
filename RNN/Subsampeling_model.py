@@ -15,7 +15,7 @@ class Sampler(nn.Module):
                  unet_num_pool_layers, unet_drop_prob):
         super().__init__()
         self.number_of_samples = number_of_samples
-        self.NN = UnetModel(in_chans=1, out_chans=1, chans=unet_chans,
+        self.NN = UnetModel(in_chans=2, out_chans=1, chans=unet_chans,
                                               num_pool_layers=unet_num_pool_layers, drop_prob=unet_drop_prob)
         # can try sigmoid
         self.sqwish = nn.ReLU()
