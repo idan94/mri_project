@@ -23,6 +23,7 @@ class Args(argparse.ArgumentParser):
         super().__init__(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         self.add_argument('--resolution', default=320, type=int, help='Resolution of images (brain \
                 challenge expects resolution of 384, knee resolution expects resolution of 320')
+        self.add_argument('--decision-levels', default=25, type=int, help='number of decisions per epoch')
         self.add_argument('--resume', action='store_true',
                           help='If set, resume the training from a previous model checkpoint'
                                '"--checkpoint" should be set with this')
@@ -44,6 +45,12 @@ class Args(argparse.ArgumentParser):
                           help='the number of epochs that will pass for each decaying of the lr for the sampler DNN')
         self.add_argument('--sampler-lr-min-value', type=float, default=0.0001,
                           help='the min learning rate for the sampler DNN')
+        self.add_argument('--reconstruction-unet-chans', type=int, default=16,
+                          help='Unet\'s number of output channels of the first convolution layer')
+        self.add_argument('--reconstruction-unet-drop-prob', type=int, default=0,
+                          help='Unet\'s dropout probability')
+        self.add_argument('--reconstruction-unet-num-pool-layers', type=int, default=2,
+                          help='Unet\'s number of down-sampling and up-sampling layers')
 
         # Adversarial parameters
         self.add_argument('--adversarial-sample-rate', type=float, default=0.3,
@@ -80,11 +87,11 @@ class Args(argparse.ArgumentParser):
         self.add_argument('--reconstructor-sub-epochs', type=int, default=3,
                           help='the amount of reconstructor epochs that will be done for each adversarial + '
                                'sampler epochs')
-        self.add_argument('--unet-chans', type=int, default=16,
+        self.add_argument('--reconstruction-unet-chans', type=int, default=32,
                           help='Unet\'s number of output channels of the first convolution layer')
-        self.add_argument('--unet-drop-prob', type=int, default=0,
+        self.add_argument('--reconstruction-unet-drop-prob', type=int, default=0,
                           help='Unet\'s dropout probability')
-        self.add_argument('--unet-num-pool-layers', type=int, default=4,
+        self.add_argument('--reconstruction-unet-num-pool-layers', type=int, default=4,
                           help='Unet\'s number of down-sampling and up-sampling layers')
 
         # data loading parameters
