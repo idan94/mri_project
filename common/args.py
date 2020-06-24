@@ -45,11 +45,11 @@ class Args(argparse.ArgumentParser):
                           help='the number of epochs that will pass for each decaying of the lr for the sampler DNN')
         self.add_argument('--sampler-lr-min-value', type=float, default=0.0001,
                           help='the min learning rate for the sampler DNN')
-        self.add_argument('--reconstruction-unet-chans', type=int, default=16,
+        self.add_argument('--sampler-unet-chans', type=int, default=16,
                           help='Unet\'s number of output channels of the first convolution layer')
-        self.add_argument('--reconstruction-unet-drop-prob', type=int, default=0,
+        self.add_argument('--sampler-unet-drop-prob', type=int, default=0,
                           help='Unet\'s dropout probability')
-        self.add_argument('--reconstruction-unet-num-pool-layers', type=int, default=2,
+        self.add_argument('--sampler-unet-num-pool-layers', type=int, default=2,
                           help='Unet\'s number of down-sampling and up-sampling layers')
 
         # Adversarial parameters
@@ -74,7 +74,7 @@ class Args(argparse.ArgumentParser):
         # Reconstructor parameters
         self.add_argument('--reconstructor-sample-rate', type=float, default=0.5,
                           help='Fraction of total volumes to include to the data set of the reconstructor DNN')
-        self.add_argument('--adversarial-batch-size', default=16, type=int,
+        self.add_argument('--reconstructor-batch-size', default=16, type=int,
                           help='Mini batch size for the adversarial DNN')
         self.add_argument('--reconstructor-lr', type=float, default=0.01,
                           help='Learning rate for the reconstructor DNN')
@@ -112,6 +112,9 @@ class Args(argparse.ArgumentParser):
         self.add_argument('--output-dir', default='last_test', type=str, help='Path to outputs')
         self.add_argument('--display-images', default=5, type=int,
                           help='Number of images(target+output) to display when test method is called')
+        # To-delete
+        self.add_argument('--batch-size', type=int, default=4,
+                          help='Unet\'s number of down-sampling and up-sampling layers')
 
         # Override defaults with passed overrides
         self.set_defaults(**overrides)

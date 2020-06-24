@@ -8,6 +8,9 @@ import torch.optim as optim
 import torchvision
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
+import pytorch_nufft.interp as interp
+import pytorch_nufft.nufft as nufft
+from data.transforms import fft2, ifft2
 
 from common.args import Args
 from data.mri_data import SliceData
@@ -83,19 +86,26 @@ def create_batches(data, number_of_batches, batch_size):
     return batches
 
 
-
 def K_space_log(k_space):
     # the log of the k_space is done on the abs of each channel of the k_space
     # this is done to scale the range of numbers of the k_space to something  that can fit better to a DNN
     log_of_k_space = torch.zeros_like(k_space)
-    log_of_k_space[:, :, :, 0] = torch.log(torch.abs(k_space[:, :, :, 0]))
-    log_of_k_space[:, :, :, 1] = torch.log(torch.abs(k_space[:, :, :, 1]))
+    log_of_k_space[:, :, :, 0] = torch.log(torch.abs(k_space[:, :, :, 0])) * torch.sign(k_space[:, :, :, 0])
+    log_of_k_space[:, :, :, 1] = torch.log(torch.abs(k_space[:, :, :, 1])) * torch.sign(k_space[:, :, :, 1])
     return log_of_k_space
+
+
+def sample_sampling_vector(sampling_vector, full_k_space):
+    new_sample = interp.bilinear_interpolate_torch_gridsample(full_k_space, sampling_vector)
+    new_sampled_image = nufft.nufft_adjoint(new_sample, sampling_vector, full_k_space.shape, device=full_k_space.device)
+    sampled_k_space = fft2(new_sampled_image)
+    return sampled_k_space
 
 
 def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, adversarial_optimizer,
                       over_all_optimizer):
     # TODO: this could be very fast if we use very big batch size of the data loader
+    # TODO: change sampling model to few samples instead of one
     # use different data loader with very big batch size for this, the GPU will do all the processing very fast
     # because the entire batch is processed simultaneously
     for k_space, target, f_name, slice in data:
@@ -108,14 +118,15 @@ def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, 
         # sample the first pixel in the middle
         sampled_log_k_space = sampling_map * k_space_log
         # create the sampling steps
+        overall_sampling_vector = torch.zeros((batch_size, 0))
         for _ in range(sampler.number_of_samples):
             with torch.no_grad():
-                temp_sampling_mask = sampler(sampled_log_k_space)
+                sampling_vector = sampler(sampled_log_k_space)
+
             sampling_steps[0].append(torch.cat([sampled_log_k_space, k_space_log], dim=3))
             # add the sample from the K-space
-            sampling_map = sampling_map + temp_sampling_mask
-            sampled_log_k_space = sampled_log_k_space + temp_sampling_mask * k_space_log
-
+            sampled_log_k_space = sampled_log_k_space + sample_sampling_vector(sampling_vector, k_space_log)
+            overall_sampling_vector = torch.cat([overall_sampling_vector, sampling_vector], dim=1)
             with torch.no_grad():
                 sampling_steps[1].append(adversarial(torch.cat([sampled_log_k_space, k_space_log], dim=3)))
         # new calculate the loss on the last sample
@@ -123,7 +134,8 @@ def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, 
         # the loss could be L2, L1, PSNR, SSIM or another metric
         sampling_steps[0].append(torch.cat([sampled_log_k_space, k_space_log], dim=3))
         # calc the loss on each sample
-        sampled_k_space = sampling_map * k_space
+        sampled_k_space = torch.zeros()
+        sampled_k_space = sample_sampling_vector(overall_sampling_vector, k_space)
         with torch.no_grad():
             loss_over_last_sample = [loss_function(reconstructor(sampled_k_space.permute(0, 3, 1, 2)[0].unsqueeze(0)),
                                                    target.unsqueeze(1)[i]).reshape(1, 1) for i in range(batch_size)]
@@ -145,14 +157,14 @@ def sampler_epoch(sampler, adversarial, reconstructor, data, loss_function, samp
         sampling_mask.permute(1, 2, 0, 3)[length // 2][hight // 2][:][:] = 1
         sampled_log_k_space = sampling_mask * k_space_log
         k_space.requires_grad = True
-        for _ in range(sampler.number_of_samples):
+        for _ in range(sampler.number_of_decisions):
             # to zero the grad of the adversarial network and the u_net as well
             over_all_optimizer.zero_grad()
             # delete the gradients from previous iterations
             k_space_log = k_space_log.detach()
             sampled_log_k_space = sampled_log_k_space.detach()
-            temp_sampling_mask = sampler(sampled_log_k_space)
-            sampled_log_k_space = sampled_log_k_space + temp_sampling_mask * k_space_log
+            sampling_vector = sampler(sampled_log_k_space)
+            sampled_log_k_space = sampled_log_k_space + sample_sampling_vector(sampling_vector, k_space_log)
             loss = adversarial(torch.cat([sampled_log_k_space, k_space_log], dim=3))
             # the adversarial NN approx the error of each sample, to minimize it we will take the MSE off
             # the adversarial result over the entire batch
@@ -168,18 +180,19 @@ def reconstructor_epochs(sampler, data, reconstructor, loss_function, reconstruc
     subsampled_data = [[], []]
     for k_space, target, f_name, slice in data:
         batch_size, length, hight, channels = k_space.shape
-        sampling_mask = torch.zeros(batch_size, length, hight, 1)
-        sampling_mask.permute(1, 2, 0, 3)[length // 2][hight // 2][:][:] = 1
+        sampling_of_the_k_space = torch.zeros(batch_size, length, hight, 1)
+        sampling_of_the_k_space.permute(1, 2, 0, 3)[length // 2][hight // 2][:][:] = 1
         k_space_log = K_space_log(k_space)
-        sampling_of_the_k_space_log = k_space_log * sampling_mask
-        for _ in range(sampler.number_of_samples):
+        sampling_of_the_k_space_log = k_space_log * sampling_of_the_k_space
+        for _ in range(sampler.number_of_decisions):
             # to zero the grad of the adversarial network and the u_net as well
             with torch.no_grad():
                 # TODO: fix the input should be k-space
-                temp_sampling_mask = sampler(sampling_of_the_k_space_log)
-                sampling_mask = sampling_mask + temp_sampling_mask
-                sampling_of_the_k_space_log = sampling_of_the_k_space_log + temp_sampling_mask * k_space_log
-        subsampled_data[0].append(sampling_mask * k_space)
+                sampling_vector = sampler(sampling_of_the_k_space_log)
+                sampling_of_the_k_space = sampling_of_the_k_space + sample_sampling_vector(sampling_vector, k_space)
+                sampling_of_the_k_space_log = sampling_of_the_k_space_log + sample_sampling_vector(sampling_vector,
+                                                                                                   k_space_log)
+        subsampled_data[0].append(sampling_of_the_k_space)
         subsampled_data[1].append(target)
     # optimize the u-net
     for _ in range(epochs):
@@ -205,8 +218,12 @@ def train_epoch(sampler, adversarial, reconstructor, data, loss_function, number
                          number_of_recon_repochs)
 
 
+# TODO: rewrite tarin
+# TODO: add data perallel
+# TODO: add visulize
+# TODO: add save and load models
 def train(number_of_epochs, reconstructor_lr, sampler_lr, adversarial_lr):
-    sampler = Sampler(2, 3, 1, 0)
+    sampler = Sampler(320, 32, 100, 5, 5, 2)
     adversarial = Adversarial(320, 10, 4, 3)
     reconstructor = UnetModel(in_chans=2, out_chans=1, chans=5, num_pool_layers=2, drop_prob=0)
     adversarial_optimizer = torch.optim.Adam(adversarial.parameters(), lr=adversarial_lr)

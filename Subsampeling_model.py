@@ -11,26 +11,40 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class Sampler(nn.Module):
-    def __init__(self, number_of_samples, unet_chans,
-                 unet_num_pool_layers, unet_drop_prob):
+    def __init__(self, resolution, decimation_rate, number_of_decisions, conv_channels,
+                 number_of_conv_layers, number_of_linear_layers):
         super().__init__()
-        self.number_of_samples = number_of_samples
-        self.NN = UnetModel(in_chans=2, out_chans=1, chans=unet_chans,
-                                              num_pool_layers=unet_num_pool_layers, drop_prob=unet_drop_prob)
-        # can try sigmoid
-        self.sqwish = nn.ReLU()
+        self.resolution = resolution
+        self.decimation_rate = decimation_rate
+        self.number_of_samples = (resolution ** 2) // decimation_rate
+        self.number_of_decisions = number_of_decisions
+        self.len_of_decision_vector = self.number_of_samples // number_of_decisions
+        # correction if not full numbers
+        self.number_of_samples = number_of_decisions * self.len_of_decision_vector
 
-    def forward(self,k_space):
-        sample_mask = self.NN(k_space.permute(0,3,1,2))
-        # # do the soft max across the matrices, these are the two last dimensions
-        # F.sample_mask = softmax(sample_mask,dim=2)
-        # F.sample_mask = softmax(sample_mask, dim=3)
-        # leave the only the maximal value in the sampeling mask
-        batch_size = k_space.shape[0]
-        maximums = [torch.topk(sample_mask[i][...].flatten(),2)[0][1] for i in range(batch_size)]
-        sample_mask = sample_mask - torch.cat(
-            [torch.topk(sample_mask[i][...].flatten(), 2)[0][1].reshape(1, 1, 1, 1) for i in range(batch_size)])
-        sample_mask = self.sqwish(sample_mask)
-        return sample_mask.permute(0,2,3,1)
+        # self.NN = UnetModel(in_chans=2, out_chans=1, chans=unet_chans,
+        #                                       num_pool_layers=unet_num_pool_layers, drop_prob=unet_drop_prob)
 
+        conv_layers = [
+            nn.Sequential(nn.Conv2d(in_channels=conv_channels, out_channels=conv_channels, kernel_size=3, padding=1),
+                          nn.MaxPool2d(2)) for _ in range(number_of_conv_layers - 2)]
+        conv_layers = [nn.Conv2d(in_channels=2, out_channels=conv_channels, kernel_size=3, padding=1)] + conv_layers
+        conv_layers = conv_layers + [nn.MaxPool2d(2)] + [nn.Conv2d(in_channels=conv_channels, out_channels=1, kernel_size=3, padding=1)]
 
+        self.convolutions = nn.Sequential(*conv_layers)
+        number_of_features = (resolution ** 2) // (4 ** (number_of_conv_layers - 1))
+        linear_layers = [
+            nn.Linear(in_features=number_of_features // (2 ** i), out_features=number_of_features // (2 ** (i + 1)))
+            for i in range(number_of_linear_layers - 1)]
+        linear_layers = linear_layers + [
+            nn.Linear(in_features=number_of_features // (2 ** (number_of_linear_layers - 1)),
+                      out_features=self.len_of_decision_vector)]
+        self.fully_connected = nn.Sequential(*linear_layers)
+
+    def forward(self, k_space):
+        sample_mask = self.convolutions(k_space.permute(0, 3, 1, 2))
+        sample_mask = sample_mask.reshape(sample_mask.shape[0], -1)
+        sample_vector = self.fully_connected(sample_mask)
+        # put the indexes of the vector between 0 and 1 for gird sample
+        sample_vector = F.sigmoid(sample_vector)
+        return sample_vector

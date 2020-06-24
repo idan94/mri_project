@@ -3,10 +3,13 @@ from torch import nn
 
 import pytorch_nufft.interp as interp
 import pytorch_nufft.nufft as nufft
+from data.transforms import fft2,ifft2
 from models.unet.unet_model import UnetModel
 from trajectory_initiations import *
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+
 
 
 class Adversarial(nn.Module):
@@ -34,6 +37,8 @@ class Adversarial(nn.Module):
         linear_layer = linear_layer + [nn.Linear(number_of_neuorons[len(number_of_neuorons) - 1], 1)]
         self.linear = nn.Sequential(*linear_layer)
 
-    def forward(self, k_space):
-        out = self.conv_layer(k_space.permute(0, 3, 1, 2))
+    def forward(self,subsampled_k_space,full_k_space):
+        # concat the channels
+        input_k_space = torch.cat([subsampled_k_space,full_k_space],dim=3)
+        out = self.conv_layer(input_k_space.permute(0, 3, 1, 2))
         return self.linear(out.reshape(out.shape[0], -1))
