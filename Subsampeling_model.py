@@ -46,6 +46,6 @@ class Sampler(nn.Module):
         sample_mask = sample_mask.reshape(sample_mask.shape[0], -1)
         sample_vector = self.fully_connected(sample_mask)
         # put the indexes of the vector between -1 and 1 for gird sample
-        sample_vector = F.tanh(sample_vector)
+        sample_vector = torch.tanh(sample_vector)
         sample_vector = sample_vector.reshape(sample_mask.shape[0],-1,2)
         return sample_vector

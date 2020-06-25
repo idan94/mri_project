@@ -21,35 +21,7 @@ from Adversarial import Adversarial
 from Subsampeling_model import Sampler
 import matplotlib.pyplot as plt
 import time
-from train_epoch import load_data
-from train_epoch import show
-
-
-def sample_vector(k_space, vector):
-    # this function will use grid sample ato nufft to sample the k_space
-    # for each sample in k_space batch there will be a sampling vector in vector parameter
-    # the vector that is given is with values between -resolution to resolution
-    images = torch.zeros_like(k_space)
-    k_space = k_space.permute(0,3,1,2)
-    for i in range(k_space.shape[0]):
-        space = k_space[i].unsqueeze(0)
-
-        # we need to reverse x,y in the sampling vector
-        # because grid sample samples y,x
-        sampling_vector = torch.zeros_like(vector[i])
-        sampling_vector[..., 0], sampling_vector[..., 1] = vector[i][..., 1], vector[i][..., 0]
-        # normalize the vector to be in the right range for sampling
-        # the values are between -1 and 1
-        sampling_vector = sampling_vector.unsqueeze(0).unsqueeze(0)
-        normalized_sampling_vector = (sampling_vector + (k_space.shape[2] / 2)) / (k_space.shape[2] - 1)
-        normalized_sampling_vector = 2 * normalized_sampling_vector - 1
-        sampled_k_space = torch.nn.functional.grid_sample(space, normalized_sampling_vector, mode='bilinear',
-                                                 padding_mode='zeros').unsqueeze(2)
-        # for the nufft the indexes sould e in the in indexes domain and no normalize to between -1 and 1
-        # and so we will use the original sampling vector
-        image = nufft.nufft_adjoint(sampled_k_space, vector[i], space.shape, device=k_space.device).squeeze(0)
-        images[i] = fft2(image)
-    return images
+from train_epoch import load_data,show,sample_vector
 
 
 def main():

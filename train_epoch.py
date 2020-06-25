@@ -35,6 +35,35 @@ def show(tenor, title=None):
     plt.show()
 
 
+def sample_vector(k_space, vector):
+    # TODO: make the loop parallel using torch parallel loops
+    # this function will use grid sample ato nufft to sample the k_space
+    # for each sample in k_space batch there will be a sampling vector in vector parameter
+    # the vector that is given is with values between -resolution to resolution
+    images = torch.zeros_like(k_space)
+    k_space = k_space.permute(0,3,1,2)
+    for i in range(k_space.shape[0]):
+        space = k_space[i].unsqueeze(0)
+
+        # we need to reverse x,y in the sampling vector
+        # because grid sample samples y,x
+        sampling_vector = torch.zeros_like(vector[i])
+        sampling_vector[..., 0], sampling_vector[..., 1] = vector[i][..., 1], vector[i][..., 0]
+        # normalize the vector to be in the right range for sampling
+        # the values are between -1 and 1
+        sampling_vector = sampling_vector.unsqueeze(0).unsqueeze(0)
+        normalized_sampling_vector = (sampling_vector + (k_space.shape[2] / 2)) / (k_space.shape[2] - 1)
+        normalized_sampling_vector = 2 * normalized_sampling_vector - 1
+        sampled_k_space = torch.nn.functional.grid_sample(space, normalized_sampling_vector, mode='bilinear',
+                                                 padding_mode='zeros').unsqueeze(2)
+        # for the nufft the indexes sould e in the in indexes domain and no normalize to between -1 and 1
+        # and so we will use the original sampling vector
+        image = nufft.nufft_adjoint(sampled_k_space, vector[i], space.shape, device=k_space.device).squeeze(0)
+        images[i] = fft2(image)
+    return images
+
+
+
 def load_data(args):
     train_dataset = SliceData(
         root=args.data_path + '/singlecoil_train',
@@ -98,14 +127,6 @@ def K_space_log(k_space):
     return log_of_k_space
 
 
-def sample_sampling_vector(sampling_vector, full_k_space):
-    vector = sampling_vector
-    new_sample = torch.nn.functional.grid_sample(input=full_k_space.permute(0,3,1,2), grid=vector.expand(vector.shape[0],-1,-1,-1), mode='bilinear', padding_mode='zeros').squeeze(2)
-    new_sampled_image = nufft.nufft_adjoint(new_sample, sampling_vector, full_k_space.shape, device=full_k_space.device)
-    sampled_k_space = fft2(new_sampled_image)
-    return sampled_k_space
-
-
 def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, adversarial_optimizer,
                       over_all_optimizer):
     # TODO: this could be very fast if we use very big batch size of the data loader
@@ -122,24 +143,23 @@ def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, 
         # sample the first pixel in the middle
         sampled_log_k_space = sampling_map * k_space_log
         # create the sampling steps
-        overall_sampling_vector = torch.zeros((batch_size, 0))
-        for _ in range(sampler.number_of_samples):
+        overall_sampling_vector = torch.zeros((batch_size, 0,2))
+        for _ in range(sampler.number_of_decisions):
             with torch.no_grad():
                 sampling_vector = sampler(sampled_log_k_space)
 
             sampling_steps[0].append(torch.cat([sampled_log_k_space, k_space_log], dim=3))
             # add the sample from the K-space
-            sampled_log_k_space = sampled_log_k_space + sample_sampling_vector(sampling_vector, k_space_log)
+            sampled_log_k_space = sampled_log_k_space + sample_vector(k_space_log, sampling_vector)
             overall_sampling_vector = torch.cat([overall_sampling_vector, sampling_vector], dim=1)
             with torch.no_grad():
-                sampling_steps[1].append(adversarial(torch.cat([sampled_log_k_space, k_space_log], dim=3)))
+                sampling_steps[1].append(adversarial(sampled_log_k_space,k_space_log))
         # new calculate the loss on the last sample
         # the last sample is calculating the loss function without another sampling again
         # the loss could be L2, L1, PSNR, SSIM or another metric
         sampling_steps[0].append(torch.cat([sampled_log_k_space, k_space_log], dim=3))
         # calc the loss on each sample
-        sampled_k_space = torch.zeros()
-        sampled_k_space = sample_sampling_vector(overall_sampling_vector, k_space)
+        sampled_k_space = sample_vector(k_space, overall_sampling_vector)
         with torch.no_grad():
             loss_over_last_sample = [loss_function(reconstructor(sampled_k_space.permute(0, 3, 1, 2)[0].unsqueeze(0)),
                                                    target.unsqueeze(1)[i]).reshape(1, 1) for i in range(batch_size)]
@@ -148,7 +168,7 @@ def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, 
 
         for batch in batches:
             over_all_optimizer.zero_grad()
-            loss = loss_function(adversarial(batch[0]), batch[1])
+            loss = loss_function(adversarial(batch[0][...,:2],batch[0][...,2:]), batch[1])
             loss.backward()
             adversarial_optimizer.step()
 
@@ -168,8 +188,8 @@ def sampler_epoch(sampler, adversarial, reconstructor, data, loss_function, samp
             k_space_log = k_space_log.detach()
             sampled_log_k_space = sampled_log_k_space.detach()
             sampling_vector = sampler(sampled_log_k_space)
-            sampled_log_k_space = sampled_log_k_space + sample_sampling_vector(sampling_vector, k_space_log)
-            loss = adversarial(torch.cat([sampled_log_k_space, k_space_log], dim=3))
+            sampled_log_k_space = sampled_log_k_space + sample_vector(k_space_log, sampling_vector)
+            loss = adversarial(sampled_log_k_space,k_space_log)
             # the adversarial NN approx the error of each sample, to minimize it we will take the MSE off
             # the adversarial result over the entire batch
             loss = torch.norm(loss, 2, dim=0)
@@ -188,15 +208,15 @@ def reconstructor_epochs(sampler, data, reconstructor, loss_function, reconstruc
         sampling_of_the_k_space.permute(1, 2, 0, 3)[length // 2][hight // 2][:][:] = 1
         k_space_log = K_space_log(k_space)
         sampling_of_the_k_space_log = k_space_log * sampling_of_the_k_space
+        over_all_sampling_vector = torch.zeros((batch_size, 0,2))
         for _ in range(sampler.number_of_decisions):
             # to zero the grad of the adversarial network and the u_net as well
             with torch.no_grad():
-                # TODO: fix the input should be k-space
                 sampling_vector = sampler(sampling_of_the_k_space_log)
-                sampling_of_the_k_space = sampling_of_the_k_space + sample_sampling_vector(sampling_vector, k_space)
-                sampling_of_the_k_space_log = sampling_of_the_k_space_log + sample_sampling_vector(sampling_vector,
-                                                                                                   k_space_log)
-        subsampled_data[0].append(sampling_of_the_k_space)
+                over_all_sampling_vector = torch.cat([over_all_sampling_vector,sampling_vector],dim=1)
+                sampling_of_the_k_space_log = sampling_of_the_k_space_log + sample_vector(k_space_log,
+                                                                                                   sampling_vector)
+        subsampled_data[0].append(sample_vector(k_space,over_all_sampling_vector))
         subsampled_data[1].append(target)
     # optimize the u-net
     for _ in range(epochs):
@@ -222,12 +242,12 @@ def train_epoch(sampler, adversarial, reconstructor, data, loss_function, number
                          number_of_recon_repochs)
 
 
-# TODO: rewrite tarin
+
 # TODO: add data perallel
 # TODO: add visulize
 # TODO: add save and load models
 def train(number_of_epochs, reconstructor_lr, sampler_lr, adversarial_lr):
-    sampler = Sampler(320, 32, 100, 5, 5, 2)
+    sampler = Sampler(320, 32, 2, 5, 5, 2)
     adversarial = Adversarial(320, 10, 4, 3)
     reconstructor = UnetModel(in_chans=2, out_chans=1, chans=5, num_pool_layers=2, drop_prob=0)
     adversarial_optimizer = torch.optim.Adam(adversarial.parameters(), lr=adversarial_lr)
