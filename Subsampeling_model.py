@@ -38,13 +38,14 @@ class Sampler(nn.Module):
             for i in range(number_of_linear_layers - 1)]
         linear_layers = linear_layers + [
             nn.Linear(in_features=number_of_features // (2 ** (number_of_linear_layers - 1)),
-                      out_features=self.len_of_decision_vector)]
+                      out_features=self.len_of_decision_vector*2)]
         self.fully_connected = nn.Sequential(*linear_layers)
 
     def forward(self, k_space):
         sample_mask = self.convolutions(k_space.permute(0, 3, 1, 2))
         sample_mask = sample_mask.reshape(sample_mask.shape[0], -1)
         sample_vector = self.fully_connected(sample_mask)
-        # put the indexes of the vector between 0 and 1 for gird sample
-        sample_vector = F.sigmoid(sample_vector)
+        # put the indexes of the vector between -1 and 1 for gird sample
+        sample_vector = F.tanh(sample_vector)
+        sample_vector = sample_vector.reshape(sample_mask.shape[0],-1,2)
         return sample_vector

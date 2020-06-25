@@ -26,7 +26,10 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 def show(tenor, title=None):
-    plt.imshow(tenor.squeeze().detach().numpy(), cmap='gray')
+    new_tensor = tenor.clone()
+    if len(tenor.shape) > 2:
+        new_tensor = new_tensor.permute(2,0,1)[0]**2 + new_tensor.permute(2,0,1)[1]**2
+    plt.imshow(new_tensor.squeeze().detach().numpy(), cmap='gray')
     if title is not None:
         plt.title(title)
     plt.show()
@@ -36,7 +39,7 @@ def load_data(args):
     train_dataset = SliceData(
         root=args.data_path + '/singlecoil_train',
         transform=DataTransform(resolution=args.resolution),
-        challenge=args.challenge, sample_rate=args.sample_rate
+        challenge=args.challenge, sample_rate=0.2
     )
     train_data_loader = DataLoader(
         dataset=train_dataset,
@@ -49,7 +52,7 @@ def load_data(args):
     val_dataset = SliceData(
         root=args.data_path + '/singlecoil_val',
         transform=DataTransform(resolution=args.resolution),
-        challenge=args.challenge, sample_rate=args.sample_rate
+        challenge=args.challenge, sample_rate=0.2
     )
     val_data_loader = DataLoader(
         dataset=val_dataset,
@@ -96,7 +99,8 @@ def K_space_log(k_space):
 
 
 def sample_sampling_vector(sampling_vector, full_k_space):
-    new_sample = interp.bilinear_interpolate_torch_gridsample(full_k_space, sampling_vector)
+    vector = sampling_vector
+    new_sample = torch.nn.functional.grid_sample(input=full_k_space.permute(0,3,1,2), grid=vector.expand(vector.shape[0],-1,-1,-1), mode='bilinear', padding_mode='zeros').squeeze(2)
     new_sampled_image = nufft.nufft_adjoint(new_sample, sampling_vector, full_k_space.shape, device=full_k_space.device)
     sampled_k_space = fft2(new_sampled_image)
     return sampled_k_space
