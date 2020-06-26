@@ -45,12 +45,12 @@ class Args(argparse.ArgumentParser):
                           help='the number of epochs that will pass for each decaying of the lr for the sampler DNN')
         self.add_argument('--sampler-lr-min-value', type=float, default=0.0001,
                           help='the min learning rate for the sampler DNN')
-        self.add_argument('--sampler-unet-chans', type=int, default=16,
-                          help='Unet\'s number of output channels of the first convolution layer')
-        self.add_argument('--sampler-unet-drop-prob', type=int, default=0,
-                          help='Unet\'s dropout probability')
-        self.add_argument('--sampler-unet-num-pool-layers', type=int, default=2,
-                          help='Unet\'s number of down-sampling and up-sampling layers')
+        self.add_argument('--sampler-convolution-channels', type=int, default=16,
+                          help='number of channels in the convolution part of the sampler DNN')
+        self.add_argument('--sampler-convolution-layers', type=int, default=4,
+                          help='the amount of convectional layers in the sampler DNN')
+        self.add_argument('--sampler-linear-layers', type=int, default=2,
+                          help='the amount of linear layers in the sampler DNN')
 
         # Adversarial parameters
         self.add_argument('--adversarial-sample-rate', type=float, default=0.3,
@@ -70,6 +70,12 @@ class Args(argparse.ArgumentParser):
                           help='the number of epochs that will pass for each decaying of the lr for the adversarial DNN')
         self.add_argument('--adversarial-lr-min-value', type=float, default=0.0001,
                           help='the min learning rate for the adversarial DNN')
+        self.add_argument('--adversarial-convolution-channels', type=int, default=10,
+                          help='the amount of channels in the convolution part of the adversarial DNN')
+        self.add_argument('--adversarial-convolution-layers', type=int, default=4,
+                          help='the amount of layers in the convolution part of the adversarial DNN')
+        self.add_argument('--adversarial-linear-layers', type=int, default=3,
+                          help='the amount of layers in the linear part of the adversarial DNN')
 
         # Reconstructor parameters
         self.add_argument('--reconstructor-sample-rate', type=float, default=0.5,

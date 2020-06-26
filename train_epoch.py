@@ -28,7 +28,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 def show(tenor, title=None):
     new_tensor = tenor.clone()
     if len(tenor.shape) > 2:
-        new_tensor = new_tensor.permute(2,0,1)[0]**2 + new_tensor.permute(2,0,1)[1]**2
+        new_tensor = new_tensor.permute(2, 0, 1)[0] ** 2 + new_tensor.permute(2, 0, 1)[1] ** 2
     plt.imshow(new_tensor.squeeze().detach().numpy(), cmap='gray')
     if title is not None:
         plt.title(title)
@@ -41,7 +41,7 @@ def sample_vector(k_space, vector):
     # for each sample in k_space batch there will be a sampling vector in vector parameter
     # the vector that is given is with values between -resolution to resolution
     images = torch.zeros_like(k_space)
-    k_space = k_space.permute(0,3,1,2)
+    k_space = k_space.permute(0, 3, 1, 2)
     for i in range(k_space.shape[0]):
         space = k_space[i].unsqueeze(0)
 
@@ -55,13 +55,12 @@ def sample_vector(k_space, vector):
         normalized_sampling_vector = (sampling_vector + (k_space.shape[2] / 2)) / (k_space.shape[2] - 1)
         normalized_sampling_vector = 2 * normalized_sampling_vector - 1
         sampled_k_space = torch.nn.functional.grid_sample(space, normalized_sampling_vector, mode='bilinear',
-                                                 padding_mode='zeros').unsqueeze(2)
+                                                          padding_mode='zeros').unsqueeze(2)
         # for the nufft the indexes sould e in the in indexes domain and no normalize to between -1 and 1
         # and so we will use the original sampling vector
         image = nufft.nufft_adjoint(sampled_k_space, vector[i], space.shape, device=k_space.device).squeeze(0)
         images[i] = fft2(image)
     return images
-
 
 
 def load_data(args):
@@ -131,6 +130,7 @@ def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, 
                       over_all_optimizer):
     # TODO: this could be very fast if we use very big batch size of the data loader
     # TODO: change sampling model to few samples instead of one
+    # TODO: this loop can be a parallel loop
     # use different data loader with very big batch size for this, the GPU will do all the processing very fast
     # because the entire batch is processed simultaneously
     for k_space, target, f_name, slice in data:
@@ -143,7 +143,7 @@ def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, 
         # sample the first pixel in the middle
         sampled_log_k_space = sampling_map * k_space_log
         # create the sampling steps
-        overall_sampling_vector = torch.zeros((batch_size, 0,2))
+        overall_sampling_vector = torch.zeros((batch_size, 0, 2))
         for _ in range(sampler.number_of_decisions):
             with torch.no_grad():
                 sampling_vector = sampler(sampled_log_k_space)
@@ -153,7 +153,7 @@ def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, 
             sampled_log_k_space = sampled_log_k_space + sample_vector(k_space_log, sampling_vector)
             overall_sampling_vector = torch.cat([overall_sampling_vector, sampling_vector], dim=1)
             with torch.no_grad():
-                sampling_steps[1].append(adversarial(sampled_log_k_space,k_space_log))
+                sampling_steps[1].append(adversarial(sampled_log_k_space, k_space_log))
         # new calculate the loss on the last sample
         # the last sample is calculating the loss function without another sampling again
         # the loss could be L2, L1, PSNR, SSIM or another metric
@@ -168,7 +168,7 @@ def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, 
 
         for batch in batches:
             over_all_optimizer.zero_grad()
-            loss = loss_function(adversarial(batch[0][...,:2],batch[0][...,2:]), batch[1])
+            loss = loss_function(adversarial(batch[0][..., :2], batch[0][..., 2:]), batch[1])
             loss.backward()
             adversarial_optimizer.step()
 
@@ -189,7 +189,7 @@ def sampler_epoch(sampler, adversarial, reconstructor, data, loss_function, samp
             sampled_log_k_space = sampled_log_k_space.detach()
             sampling_vector = sampler(sampled_log_k_space)
             sampled_log_k_space = sampled_log_k_space + sample_vector(k_space_log, sampling_vector)
-            loss = adversarial(sampled_log_k_space,k_space_log)
+            loss = adversarial(sampled_log_k_space, k_space_log)
             # the adversarial NN approx the error of each sample, to minimize it we will take the MSE off
             # the adversarial result over the entire batch
             loss = torch.norm(loss, 2, dim=0)
@@ -208,15 +208,15 @@ def reconstructor_epochs(sampler, data, reconstructor, loss_function, reconstruc
         sampling_of_the_k_space.permute(1, 2, 0, 3)[length // 2][hight // 2][:][:] = 1
         k_space_log = K_space_log(k_space)
         sampling_of_the_k_space_log = k_space_log * sampling_of_the_k_space
-        over_all_sampling_vector = torch.zeros((batch_size, 0,2))
+        over_all_sampling_vector = torch.zeros((batch_size, 0, 2))
         for _ in range(sampler.number_of_decisions):
             # to zero the grad of the adversarial network and the u_net as well
             with torch.no_grad():
                 sampling_vector = sampler(sampling_of_the_k_space_log)
-                over_all_sampling_vector = torch.cat([over_all_sampling_vector,sampling_vector],dim=1)
+                over_all_sampling_vector = torch.cat([over_all_sampling_vector, sampling_vector], dim=1)
                 sampling_of_the_k_space_log = sampling_of_the_k_space_log + sample_vector(k_space_log,
-                                                                                                   sampling_vector)
-        subsampled_data[0].append(sample_vector(k_space,over_all_sampling_vector))
+                                                                                          sampling_vector)
+        subsampled_data[0].append(sample_vector(k_space, over_all_sampling_vector))
         subsampled_data[1].append(target)
     # optimize the u-net
     for _ in range(epochs):
@@ -227,7 +227,7 @@ def reconstructor_epochs(sampler, data, reconstructor, loss_function, reconstruc
             reconstructor_optimizer.step()
 
 
-def train_epoch(sampler, adversarial, reconstructor, data, loss_function, number_of_recon_repochs,
+def train_epoch(sampler, adversarial, reconstructor, data, loss_function, number_of_recon_epochs,
                 adversarial_optimizer,
                 sampler_optimizer,
                 reconstructor_optimizer, over_all_optimizer):
@@ -239,41 +239,51 @@ def train_epoch(sampler, adversarial, reconstructor, data, loss_function, number
     print(time.time() - t1)
 
     reconstructor_epochs(sampler, data, reconstructor, loss_function, reconstructor_optimizer, over_all_optimizer,
-                         number_of_recon_repochs)
-
+                         number_of_recon_epochs)
 
 
 # TODO: add data perallel
 # TODO: add visulize
 # TODO: add save and load models
-def train(number_of_epochs, reconstructor_lr, sampler_lr, adversarial_lr):
-    sampler = Sampler(320, 32, 2, 5, 5, 2)
-    adversarial = Adversarial(320, 10, 4, 3)
-    reconstructor = UnetModel(in_chans=2, out_chans=1, chans=5, num_pool_layers=2, drop_prob=0)
-    adversarial_optimizer = torch.optim.Adam(adversarial.parameters(), lr=adversarial_lr)
-    sampler_optimizer = torch.optim.Adam(sampler.parameters(), lr=sampler_lr)
-    reconstructor_optimizer = torch.optim.Adam(reconstructor.parameters(), lr=reconstructor_lr)
+def train():
+    args = Args().parse_args()
+
+    sampler = Sampler(args.resolution, args.decimation_rate, args.decision_levels, args.sampler_convolution_channels,
+                      args.sampler_convolution_layers, args.sampler_linear_layers)
+
+    adversarial = Adversarial(args.resolution, args.adversarial_convolution_channels,
+                              args.adversarial_convolution_layers, args.adversarial_linear_layers)
+
+    reconstructor = UnetModel(in_chans=2, out_chans=1, chans=args.reconstruction_unet_chans,
+                              num_pool_layers=args.reconstruction_unet_num_pool_layers,
+                              drop_prob=args.reconstruction_unet_drop_prob)
+
+    adversarial_optimizer = torch.optim.Adam(adversarial.parameters(), lr=args.adversarial_lr, )
+    sampler_optimizer = torch.optim.Adam(sampler.parameters(), lr=args.sampler_lr)
+    reconstructor_optimizer = torch.optim.Adam(reconstructor.parameters(), lr=args.reconstructor_lr)
 
     # TODO: check this
     # this will be used to reset the gradients of the entire model
     over_all_optimizer = torch.optim.Adam(
         list(adversarial.parameters()) + list(sampler.parameters()) + list(reconstructor.parameters()))
 
-    args = Args().parse_args()
+    # TODO: remove this line, each NN needs it's own data loader with it's own sample rate
     args.sample_rate = 0.2
     train_data_loader, val_data_loader, display_data_loader = load_data(args)
 
-    loss_function = nn.MSELoss()
+    if args.loss_fn == "MSE":
+        loss_function = nn.MSELoss()
+    else:
+        loss_function = nn.L1Loss()
 
-    for _ in range(number_of_epochs):
-        train_epoch(sampler, adversarial, reconstructor, train_data_loader, loss_function, number_of_epochs,
+    for _ in range(args.num_epochs):
+        train_epoch(sampler, adversarial, reconstructor, train_data_loader, loss_function,
+                    args.reconstructor_sub_epochs,
                     adversarial_optimizer,
                     sampler_optimizer,
                     reconstructor_optimizer, over_all_optimizer)
-
-
 def main():
-    train(1, 0.01, 0.01, 0.01)
+    train()
 
 
 if __name__ == '__main__':
