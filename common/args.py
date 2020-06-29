@@ -23,7 +23,7 @@ class Args(argparse.ArgumentParser):
         super().__init__(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         self.add_argument('--resolution', default=320, type=int, help='Resolution of images (brain \
                 challenge expects resolution of 384, knee resolution expects resolution of 320')
-        self.add_argument('--decision-levels', default=25, type=int, help='number of decisions per epoch')
+        self.add_argument('--decision-levels', default=10, type=int, help='number of decisions per epoch')
         self.add_argument('--resume', action='store_true',
                           help='If set, resume the training from a previous model checkpoint'
                                '"--checkpoint" should be set with this')
