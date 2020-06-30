@@ -5,13 +5,14 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from math import log10, sqrt
 import torchvision
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 import pytorch_nufft.interp as interp
 import pytorch_nufft.nufft as nufft
 from data.transforms import fft2, ifft2
-
+from SSIM import ssim
 from common.args import Args
 from data.mri_data import SliceData
 from dataTransform import DataTransform
@@ -55,7 +56,7 @@ def sample_vector(k_space, vector):
         normalized_sampling_vector = (sampling_vector + (k_space.shape[2] / 2)) / (k_space.shape[2] - 1)
         normalized_sampling_vector = 2 * normalized_sampling_vector - 1
         sampled_k_space = torch.nn.functional.grid_sample(space, normalized_sampling_vector, mode='bilinear',
-                                                          padding_mode='zeros').unsqueeze(2)
+                                                          padding_mode='zeros', align_corners=False).unsqueeze(2)
         # for the nufft the indexes sould e in the in indexes domain and no normalize to between -1 and 1
         # and so we will use the original sampling vector
         image = nufft.nufft_adjoint(sampled_k_space, vector[i], space.shape, device=k_space.device).squeeze(0)
@@ -67,7 +68,7 @@ def load_data(args):
     train_dataset = SliceData(
         root=args.data_path + '/singlecoil_train',
         transform=DataTransform(resolution=args.resolution),
-        challenge=args.challenge, sample_rate=0.2
+        challenge=args.challenge, sample_rate=1
     )
     train_data_loader = DataLoader(
         dataset=train_dataset,
@@ -127,7 +128,7 @@ def K_space_log(k_space):
 
 
 def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, adversarial_optimizer,
-                      over_all_optimizer):
+                      over_all_optimizer, epoch_number, writer):
     # TODO: this could be very fast if we use very big batch size of the data loader
     # TODO: change sampling model to few samples instead of one
     # TODO: this loop can be a parallel loop
@@ -165,7 +166,6 @@ def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, 
                                                    target.unsqueeze(1)[i]).reshape(1, 1) for i in range(batch_size)]
         sampling_steps[1].append(torch.cat(loss_over_last_sample, dim=0))
         batches = create_batches(sampling_steps, number_of_batches=len(sampling_steps) // 2, batch_size=2)
-
         for batch in batches:
             over_all_optimizer.zero_grad()
             loss = loss_function(adversarial(batch[0][..., :2], batch[0][..., 2:]), batch[1])
@@ -173,7 +173,8 @@ def adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, 
             adversarial_optimizer.step()
 
 
-def sampler_epoch(sampler, adversarial, reconstructor, data, loss_function, sampler_optimizer, over_all_optimizer):
+def sampler_epoch(sampler, adversarial, reconstructor, data, loss_function, sampler_optimizer, over_all_optimizer,
+                  epoch_number, writer):
     for k_space, target, f_name, slice in data:
         k_space_log = K_space_log(k_space)
         batch_size, length, hight, channels = k_space.shape
@@ -197,26 +198,30 @@ def sampler_epoch(sampler, adversarial, reconstructor, data, loss_function, samp
             sampler_optimizer.step()
 
 
+def get_sub_sampled(sampler, k_space):
+    batch_size, length, height, channels = k_space.shape
+    sampling_of_the_k_space = torch.zeros(batch_size, length, height, 1)
+    sampling_of_the_k_space.permute(1, 2, 0, 3)[length // 2][height // 2][:][:] = 1
+    k_space_log = K_space_log(k_space)
+    sampling_of_the_k_space_log = k_space_log * sampling_of_the_k_space
+    over_all_sampling_vector = torch.zeros((batch_size, 0, 2))
+    for _ in range(sampler.number_of_decisions):
+        # to zero the grad of the adversarial network and the u_net as well
+        with torch.no_grad():
+            sampling_vector = sampler(sampling_of_the_k_space_log)
+            over_all_sampling_vector = torch.cat([over_all_sampling_vector, sampling_vector], dim=1)
+            sampling_of_the_k_space_log = sampling_of_the_k_space_log + sample_vector(k_space_log,
+                                                                                      sampling_vector)
+    return sample_vector(k_space, over_all_sampling_vector)
+
+
 def reconstructor_epochs(sampler, data, reconstructor, loss_function, reconstructor_optimizer, over_all_optimizer,
-                         epochs):
+                         epochs, epoch_number, writer):
     # create the subsampled data
     # this could be done fast using a very big batch size
     subsampled_data = [[], []]
     for k_space, target, f_name, slice in data:
-        batch_size, length, hight, channels = k_space.shape
-        sampling_of_the_k_space = torch.zeros(batch_size, length, hight, 1)
-        sampling_of_the_k_space.permute(1, 2, 0, 3)[length // 2][hight // 2][:][:] = 1
-        k_space_log = K_space_log(k_space)
-        sampling_of_the_k_space_log = k_space_log * sampling_of_the_k_space
-        over_all_sampling_vector = torch.zeros((batch_size, 0, 2))
-        for _ in range(sampler.number_of_decisions):
-            # to zero the grad of the adversarial network and the u_net as well
-            with torch.no_grad():
-                sampling_vector = sampler(sampling_of_the_k_space_log)
-                over_all_sampling_vector = torch.cat([over_all_sampling_vector, sampling_vector], dim=1)
-                sampling_of_the_k_space_log = sampling_of_the_k_space_log + sample_vector(k_space_log,
-                                                                                          sampling_vector)
-        subsampled_data[0].append(sample_vector(k_space, over_all_sampling_vector))
+        subsampled_data[0].append(get_sub_sampled(sampler, k_space))
         subsampled_data[1].append(target)
     # optimize the u-net
     for _ in range(epochs):
@@ -227,37 +232,107 @@ def reconstructor_epochs(sampler, data, reconstructor, loss_function, reconstruc
             reconstructor_optimizer.step()
 
 
-def train_epoch(sampler, adversarial, reconstructor, data, loss_function, number_of_recon_epochs,
+def train_epoch(sampler, adversarial, reconstructor, train_data_loader, display_data_loader, loss_function,
+                number_of_recon_epochs,
                 adversarial_optimizer,
                 sampler_optimizer,
-                reconstructor_optimizer, over_all_optimizer):
+                reconstructor_optimizer, over_all_optimizer, epoch_number, writer):
+    print("Starting epoch: " + str(epoch_number))
     # first we train the adversarial using the reconstructor and the sampler
+    sampler.train()
+    adversarial.train()
+    reconstructor.train()
     t1 = time.time()
-    adversarial_epoch(sampler, adversarial, reconstructor, data, loss_function, adversarial_optimizer,
-                      over_all_optimizer)
-    sampler_epoch(sampler, adversarial, reconstructor, data, loss_function, sampler_optimizer, over_all_optimizer)
-    print(time.time() - t1)
+    adversarial_epoch(sampler, adversarial, reconstructor, train_data_loader, loss_function, adversarial_optimizer,
+                      over_all_optimizer, epoch_number, writer)
+    print("Done adversarial part. Time for this part: " + str(time.time() - t1))
+    t2 = time.time()
+    sampler_epoch(sampler, adversarial, reconstructor, train_data_loader, loss_function, sampler_optimizer,
+                  over_all_optimizer,
+                  epoch_number, writer)
+    print("Done sampling part. Time for this part: " + str(time.time() - t2))
+    t3 = time.time()
+    reconstructor_epochs(sampler, train_data_loader, reconstructor, loss_function, reconstructor_optimizer,
+                         over_all_optimizer,
+                         number_of_recon_epochs, epoch_number, writer)
+    print("Done reconstruction part. Time for this part: " + str(time.time() - t3))
+    print("Done Epoch. Total epoch time: " + str(time.time() - t1))
+    visualize(sampler, adversarial, reconstructor, epoch_number, display_data_loader, writer)
 
-    reconstructor_epochs(sampler, data, reconstructor, loss_function, reconstructor_optimizer, over_all_optimizer,
-                         number_of_recon_epochs)
+
+def visualize(sampler, adversarial, reconstructor, epoch_number, display_data_loader, writer):
+    sampler.eval()
+    adversarial.eval()
+    reconstructor.eval()
+    with torch.no_grad():
+        number_of_images, l1_loss, mse_loss, psnr_loss, ssim_loss = (0, 0, 0, 0, 0)
+        for i, data in enumerate(display_data_loader):
+            k_space, target, f_name, slice = data
+            # k_space = k_space.unsqueeze(1)
+            target = target.unsqueeze(1)
+
+            # Target Image:
+            if epoch_number == 1:
+                save_image(target, 'Target', 0, writer)
+            # Reconstructed Image from our model:
+            output = reconstructor(get_sub_sampled(sampler, k_space).permute(0, 3, 1, 2))
+            save_image(output, 'Reconstruction', epoch_number, writer)
+            # Error. Normal L1 visualization(pixel by pixel subtraction):
+            save_image(torch.abs(target - output), 'Error', epoch_number, writer)
+            # L1:
+            loss = nn.L1Loss()
+            l1_loss += loss(target, output)
+            # MSE:
+            loss = nn.MSELoss()
+            mse_loss += loss(target, output)
+            # PSNR:
+            psnr_loss += calc_psnr(mse_loss)
+            # SSIM:
+            ssim_loss += ssim(target, output)
+            number_of_images += 1
+            break
+        if number_of_images > 0:
+            writer.add_scalar('Loss/L1', l1_loss / number_of_images, epoch_number)
+            writer.add_scalar('Loss/MSE', mse_loss / number_of_images, epoch_number)
+            writer.add_scalar('Loss/PSNR', psnr_loss / number_of_images, epoch_number)
+            writer.add_scalar('Loss/SSIM', ssim_loss / number_of_images, epoch_number)
+
+
+def calc_psnr(mse):
+    if (mse == 0):  # MSE is zero means no noise is present in the signal .
+        # Therefore PSNR have no importance.
+        return -1
+    max_pixel = 255.0  # TODO: check this max pixel value
+    return 20 * log10(max_pixel / sqrt(mse))
+
+
+def save_image(image, tag, epoch, writer):
+    image -= image.min()
+    image /= image.max()
+    grid = torchvision.utils.make_grid(image, nrow=4, pad_value=1)
+    writer.add_image(tag, grid, epoch)
 
 
 # TODO: add data perallel
 # TODO: add visulize
 # TODO: add save and load models
 def train():
+    # Args and output stuff
     args = Args().parse_args()
-
+    writer = SummaryWriter(log_dir=args.output_dir)
+    pathlib.Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    with open(args.output_dir + '/args.txt', "w") as text_file:
+        for arg in vars(args):
+            print(str(arg) + ': ' + str(getattr(args, arg)), file=text_file)
+    # Define models:
     sampler = Sampler(args.resolution, args.decimation_rate, args.decision_levels, args.sampler_convolution_channels,
                       args.sampler_convolution_layers, args.sampler_linear_layers)
-
     adversarial = Adversarial(args.resolution, args.adversarial_convolution_channels,
                               args.adversarial_convolution_layers, args.adversarial_linear_layers)
-
     reconstructor = UnetModel(in_chans=2, out_chans=1, chans=args.reconstruction_unet_chans,
                               num_pool_layers=args.reconstruction_unet_num_pool_layers,
                               drop_prob=args.reconstruction_unet_drop_prob)
-
+    # Define optimizer:
     adversarial_optimizer = torch.optim.Adam(adversarial.parameters(), lr=args.adversarial_lr, )
     sampler_optimizer = torch.optim.Adam(sampler.parameters(), lr=args.sampler_lr)
     reconstructor_optimizer = torch.optim.Adam(reconstructor.parameters(), lr=args.reconstructor_lr)
@@ -275,13 +350,18 @@ def train():
         loss_function = nn.MSELoss()
     else:
         loss_function = nn.L1Loss()
-
-    for _ in range(args.num_epochs):
-        train_epoch(sampler, adversarial, reconstructor, train_data_loader, loss_function,
+    print('~~~Starting Training~~~')
+    print('We will run now ' + str(args.num_epochs) + ' epochs')
+    for epoch_number in range(args.num_epochs):
+        train_epoch(sampler, adversarial, reconstructor, train_data_loader, display_data_loader, loss_function,
                     args.reconstructor_sub_epochs,
                     adversarial_optimizer,
                     sampler_optimizer,
-                    reconstructor_optimizer, over_all_optimizer)
+                    reconstructor_optimizer, over_all_optimizer, epoch_number + 1, writer)
+    print('~~~Finished Training~~~')
+    writer.close()
+
+
 def main():
     train()
 
